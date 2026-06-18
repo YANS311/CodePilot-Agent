@@ -105,3 +105,6 @@ tests/                   # 147 个单元测试
 ## License
 
 MIT
+
+---
+Built with Claude Code
