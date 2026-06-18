@@ -1,0 +1,472 @@
+{
+  "version": "2.0",
+  "description": "CodePilot Agent 评估任务集 v2 — 30 tasks with difficulty tiers",
+  "metric": "Task Success Rate = 通过任务数 / 总任务数",
+  "tasks": [
+    {
+      "id": "fix-subtract",
+      "name": "修复 subtract 算术错误",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/buggy_calculator.py 中 subtract 函数的算术错误",
+      "file": "examples/buggy_calculator.py",
+      "test_target": "tests/test_buggy_calculator.py::TestCalculator::test_subtract",
+      "expected_behavior": "subtract 应返回 a - b",
+      "success_criteria": [
+        "subtract 方法正确返回 a - b",
+        "测试用例: subtract(5, 3) == 2"
+      ],
+      "reference_fix": "将 subtract 中的 a + b 改为 a - b"
+    },
+    {
+      "id": "fix-reverse-string",
+      "name": "修复 reverse_string off-by-one",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/string_utils.py 中 reverse_string 的 off-by-one 错误",
+      "file": "examples/string_utils.py",
+      "test_target": "tests/test_string_utils.py::TestReverseString::test_simple",
+      "expected_behavior": "reverse_string('hello') 应返回 'olleh'",
+      "success_criteria": [
+        "reverse_string 正确反转字符串",
+        "测试用例: reverse_string('hello') == 'olleh'"
+      ],
+      "reference_fix": "将 s[:-1] 改为 s[::-1]"
+    },
+    {
+      "id": "fix-count-vowels",
+      "name": "修复 count_vowels off-by-one",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/string_utils.py 中 count_vowels 的 off-by-one 错误",
+      "file": "examples/string_utils.py",
+      "test_target": "tests/test_string_utils.py::TestCountVowels::test_hello",
+      "expected_behavior": "count_vowels('hello') 应返回 2",
+      "success_criteria": [
+        "count_vowels 正确统计元音数量",
+        "测试用例: count_vowels('hello') == 2"
+      ],
+      "reference_fix": "将 return count - 1 改为 return count"
+    },
+    {
+      "id": "fix-todo-list-pending",
+      "name": "修复 list_pending 条件反转",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/todo_service.py 中 list_pending 方法条件反转的 bug",
+      "file": "examples/todo_service.py",
+      "test_target": "tests/test_todo_service.py::TestTodoService::test_list_pending",
+      "expected_behavior": "list_pending 应返回 done=False 的 todo",
+      "success_criteria": [
+        "list_pending 方法返回未完成的 todo",
+        "测试用例: list_pending 不包含 done=True 的项"
+      ],
+      "reference_fix": "将 list_pending 中的 if t.done 改为 if not t.done"
+    },
+    {
+      "id": "fix-user-to-dict",
+      "name": "修复 User.to_dict 缺少字段",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/data_models.py 中 User.to_dict 缺少 created_at 字段",
+      "file": "examples/data_models.py",
+      "test_target": "tests/test_data_models.py::TestUser::test_to_dict",
+      "expected_behavior": "to_dict 应包含 created_at 字段",
+      "success_criteria": [
+        "to_dict 返回的字典包含 created_at",
+        "测试用例: 'created_at' in user.to_dict()"
+      ],
+      "reference_fix": "在 to_dict 返回的字典中添加 'created_at': self.created_at"
+    },
+    {
+      "id": "fix-task-to-dict",
+      "name": "修复 Task.to_dict 缺少字段",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/data_models.py 中 Task.to_dict 缺少 priority 字段",
+      "file": "examples/data_models.py",
+      "test_target": "tests/test_data_models.py::TestTask::test_to_dict",
+      "expected_behavior": "to_dict 应包含 priority 字段",
+      "success_criteria": [
+        "to_dict 返回的字典包含 priority",
+        "测试用例: task.to_dict()['priority'] == 3"
+      ],
+      "reference_fix": "在 to_dict 返回的字典中添加 'priority': self.priority"
+    },
+    {
+      "id": "fix-import",
+      "name": "修复 import 错误",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/broken_import.py 中的 import 错误",
+      "file": "examples/broken_import.py",
+      "test_target": "tests/test_broken_import.py",
+      "expected_behavior": "模块可以被正常 import",
+      "success_criteria": [
+        "文件中的 import 语句正确",
+        "模块可以被正常 import"
+      ],
+      "reference_fix": "修正 import 路径或添加缺失的依赖"
+    },
+    {
+      "id": "fix-count-words",
+      "name": "修复 count_words 空行计算",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/file_processor.py 中 count_words 对空行的处理",
+      "file": "examples/file_processor.py",
+      "test_target": "tests/test_file_processor.py::TestCountWords::test_empty_file",
+      "expected_behavior": "空文件应返回 0 个单词",
+      "success_criteria": [
+        "count_words 对空文件返回 0",
+        "测试用例: count_words(empty_file) == 0"
+      ],
+      "reference_fix": "确保空行不会被计入单词数（当前实现已经正确处理空行，但需要验证空文件的情况）"
+    },
+    {
+      "id": "fix-capitalize-tabs",
+      "name": "修复 capitalize_words 只处理空格",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/string_utils.py 中 capitalize_words 只处理空格分隔的问题",
+      "file": "examples/string_utils.py",
+      "test_target": "tests/test_string_utils.py::TestCapitalizeWords::test_with_tabs",
+      "expected_behavior": "capitalize_words 应处理所有空白字符",
+      "success_criteria": [
+        "capitalize_words 正确处理 tab 分隔的单词",
+        "测试用例: capitalize_words('hello\\tworld') == 'Hello\\tWorld'"
+      ],
+      "reference_fix": "将 s.split(' ') 改为 s.split() 以处理所有空白字符"
+    },
+    {
+      "id": "fix-todo-complete",
+      "name": "修复 TodoService.complete 未保存",
+      "difficulty": "easy",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/todo_service.py 中 complete 方法未调用 _save() 的 bug",
+      "file": "examples/todo_service.py",
+      "test_target": "tests/test_todo_service.py::TestTodoService::test_complete",
+      "expected_behavior": "complete 方法应调用 _save() 持久化状态",
+      "success_criteria": [
+        "complete 方法在设置 done=True 后调用 _save()",
+        "测试用例: complete 后重新加载数据，done 状态应保持"
+      ],
+      "reference_fix": "在 complete 方法中 todo.done = True 后添加 self._save()"
+    },
+    {
+      "id": "fix-divide-zero",
+      "name": "修复 divide 除零检查",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/buggy_calculator.py 中 divide 函数缺少除零检查的 bug",
+      "file": "examples/buggy_calculator.py",
+      "test_target": "tests/test_buggy_calculator.py::TestCalculator::test_divide_zero",
+      "expected_behavior": "divide 在 b=0 时应抛出 ValueError",
+      "success_criteria": [
+        "divide 方法在 b==0 时抛出 ValueError('除数不能为零')",
+        "测试用例: divide(10, 0) raises ValueError"
+      ],
+      "reference_fix": "在 divide 方法开头添加 if b == 0: raise ValueError('除数不能为零')"
+    },
+    {
+      "id": "fix-factorial",
+      "name": "修复 factorial off-by-one",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/buggy_calculator.py 中 factorial 函数的 off-by-one 错误",
+      "file": "examples/buggy_calculator.py",
+      "test_target": "tests/test_buggy_calculator.py::TestCalculator::test_factorial",
+      "expected_behavior": "factorial(5) 应返回 120",
+      "success_criteria": [
+        "factorial 方法正确计算阶乘",
+        "测试用例: factorial(5) == 120"
+      ],
+      "reference_fix": "将 range(1, n) 改为 range(1, n+1)"
+    },
+    {
+      "id": "fix-merge-configs",
+      "name": "修复 merge_configs 不递归合并",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/config_parser.py 中 merge_configs 不递归合并嵌套字典的 bug",
+      "file": "examples/config_parser.py",
+      "test_target": "tests/test_config_parser.py::TestMergeConfigs::test_deep_merge",
+      "expected_behavior": "merge_configs 应递归合并嵌套字典",
+      "success_criteria": [
+        "嵌套字典被正确递归合并",
+        "测试用例: base={'db':{'host':'localhost','port':5432}}, override={'db':{'port':3306}} → result['db']['host']=='localhost'"
+      ],
+      "reference_fix": "将 result[key] = value 改为 result[key] = merge_configs(result[key], value) 当两者都是 dict 时"
+    },
+    {
+      "id": "fix-get-config-value",
+      "name": "修复 get_config_value 默认值",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/config_parser.py 中 get_config_value 在键不存在时返回 None 而非默认值",
+      "file": "examples/config_parser.py",
+      "test_target": "tests/test_config_parser.py::TestGetConfigValue::test_missing_key_with_default",
+      "expected_behavior": "get_config_value 应返回传入的默认值",
+      "success_criteria": [
+        "当键不存在时返回默认值而非 None",
+        "测试用例: get_config_value(config, 'b', 'fallback') == 'fallback'"
+      ],
+      "reference_fix": "将 return default 改为 return default（当前代码已经有 return default，但需要检查是否被 None 覆盖）"
+    },
+    {
+      "id": "fix-replace-in-file",
+      "name": "修复 replace_in_file 相同参数",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/file_processor.py 中 replace_in_file 当 old==new 时仍返回计数的 bug",
+      "file": "examples/file_processor.py",
+      "test_target": "tests/test_file_processor.py::TestReplaceInFile::test_same_old_new",
+      "expected_behavior": "当 old 和 new 相同时应返回 0",
+      "success_criteria": [
+        "replace_in_file 在 old==new 时返回 0",
+        "测试用例: replace_in_file(path, 'a', 'a') == 0"
+      ],
+      "reference_fix": "在函数开头添加 if old == new: return 0"
+    },
+    {
+      "id": "fix-append-line",
+      "name": "修复 append_line 双重换行",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/file_processor.py 中 append_line 当 line 已有换行符时产生双重换行",
+      "file": "examples/file_processor.py",
+      "test_target": "tests/test_file_processor.py::TestAppendLine::test_double_newline",
+      "expected_behavior": "append_line 不应产生双重换行",
+      "success_criteria": [
+        "append_line 正确处理已带换行符的输入",
+        "测试用例: append_line(path, 'second\\n') 不产生空行"
+      ],
+      "reference_fix": "将 f.write(line + '\\n') 改为 f.write(line if line.endswith('\\n') else line + '\\n')"
+    },
+    {
+      "id": "fix-build-url",
+      "name": "修复 build_url 未编码参数",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/api_client.py 中 build_url 未对参数值进行 URL 编码",
+      "file": "examples/api_client.py",
+      "test_target": "tests/test_api_client.py::TestBuildUrl::test_with_params",
+      "expected_behavior": "build_url 应对参数值进行 URL 编码",
+      "success_criteria": [
+        "URL 参数被正确编码",
+        "测试用例: build_url('/search', {'q': 'hello world'}) 包含 'q=hello+world'"
+      ],
+      "reference_fix": "导入 urllib.parse.quote，将 f'{k}={v}' 改为 f'{k}={quote(v)}'"
+    },
+    {
+      "id": "fix-parse-response",
+      "name": "修复 parse_response 缺少 status",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/api_client.py 中 parse_response 在 JSON 解析失败时缺少 status 字段",
+      "file": "examples/api_client.py",
+      "test_target": "tests/test_api_client.py::TestParseResponse::test_invalid_json",
+      "expected_behavior": "parse_response 应在错误时返回包含 status 字段的字典",
+      "success_criteria": [
+        "错误响应包含 status 字段",
+        "测试用例: parse_response('not json')['status'] == 400"
+      ],
+      "reference_fix": "将 return {'error': 'Invalid JSON', 'raw': raw} 改为 return {'error': 'Invalid JSON', 'status': 400, 'raw': raw}"
+    },
+    {
+      "id": "fix-list-by-priority",
+      "name": "修复 list_by_priority 返回 None",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/data_models.py 中 list_by_priority 使用 sort() 导致返回 None",
+      "file": "examples/data_models.py",
+      "test_target": "tests/test_data_models.py::TestTaskManager::test_list_by_priority",
+      "expected_behavior": "list_by_priority 应返回排序后的列表",
+      "success_criteria": [
+        "list_by_priority 返回列表而非 None",
+        "测试用例: result 是列表且按优先级降序排列"
+      ],
+      "reference_fix": "将 return result.sort(...) 改为 return sorted(result, key=lambda t: t.priority, reverse=True)"
+    },
+    {
+      "id": "fix-find-longest-line",
+      "name": "修复 find_longest_line 多行同长",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/file_processor.py 中 find_longest_line 在多行同长时只返回最后一个",
+      "file": "examples/file_processor.py",
+      "test_target": "tests/test_file_processor.py::TestFindLongestLine::test_multiple_same_length",
+      "expected_behavior": "find_longest_line 应返回第一个最长行",
+      "success_criteria": [
+        "find_longest_line 返回第一个最长行",
+        "测试用例: 多行同长时返回第一个"
+      ],
+      "reference_fix": "将 if len(line) > len(longest) 改为 if len(line) >= len(longest)，或使用 min() 找第一个"
+    },
+    {
+      "id": "add-validation",
+      "name": "添加参数类型校验",
+      "difficulty": "medium",
+      "category": "enhancement",
+      "task": "为 workspace/examples/buggy_calculator.py 中的 Calculator 类添加参数类型校验",
+      "file": "examples/buggy_calculator.py",
+      "test_target": "tests/test_buggy_calculator.py::TestTypeValidation",
+      "expected_behavior": "所有方法在传入非整数参数时应抛出 TypeError",
+      "success_criteria": [
+        "add 方法校验参数类型",
+        "subtract 方法校验参数类型",
+        "测试用例: add('a', 1) raises TypeError"
+      ],
+      "reference_fix": "在方法开头添加 if not isinstance(a, int) or not isinstance(b, int): raise TypeError('参数必须是整数')"
+    },
+    {
+      "id": "fix-user-deactivate",
+      "name": "修复 User.deactivate 未记录时间",
+      "difficulty": "medium",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/data_models.py 中 User.deactivate 未记录停用时间",
+      "file": "examples/data_models.py",
+      "test_target": "tests/test_data_models.py::TestUser::test_deactivate",
+      "expected_behavior": "deactivate 应记录停用时间",
+      "success_criteria": [
+        "deactivate 方法设置 active=False 后记录时间",
+        "测试用例: deactivate 后有停用时间记录"
+      ],
+      "reference_fix": "在 deactivate 方法中添加 self.deactivated_at = datetime.now().isoformat()"
+    },
+    {
+      "id": "fix-retry-request",
+      "name": "修复 retry_request 无延迟",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/api_client.py 中 retry_request 重试之间没有延迟",
+      "file": "examples/api_client.py",
+      "test_target": "tests/test_api_client.py::TestRetryRequest",
+      "expected_behavior": "retry_request 应在重试之间添加延迟",
+      "success_criteria": [
+        "重试之间有 sleep 延迟",
+        "测试用例: 重试间隔递增"
+      ],
+      "reference_fix": "在 except 块中添加 import time; time.sleep(2 ** attempt)"
+    },
+    {
+      "id": "fix-multi-file-todo",
+      "name": "修复 TodoService 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/todo_service.py 中 complete 未保存和 list_pending 条件反转两个 bug",
+      "file": "examples/todo_service.py",
+      "test_target": "tests/test_todo_service.py",
+      "expected_behavior": "complete 应保存状态，list_pending 应返回未完成项",
+      "success_criteria": [
+        "complete 方法调用 _save()",
+        "list_pending 返回 done=False 的项",
+        "所有测试通过"
+      ],
+      "reference_fix": "在 complete 中添加 self._save()，将 list_pending 中的 if t.done 改为 if not t.done"
+    },
+    {
+      "id": "fix-config-all",
+      "name": "修复 config_parser 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/config_parser.py 中 merge_configs 和 get_config_value 两个 bug",
+      "file": "examples/config_parser.py",
+      "test_target": "tests/test_config_parser.py",
+      "expected_behavior": "merge_configs 应递归合并，get_config_value 应返回默认值",
+      "success_criteria": [
+        "merge_configs 递归合并嵌套字典",
+        "get_config_value 在键不存在时返回默认值",
+        "所有测试通过"
+      ],
+      "reference_fix": "递归合并嵌套字典，确保默认值正确传递"
+    },
+    {
+      "id": "fix-data-models-all",
+      "name": "修复 data_models 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/data_models.py 中 User.to_dict、Task.to_dict 和 list_by_priority 三个 bug",
+      "file": "examples/data_models.py",
+      "test_target": "tests/test_data_models.py",
+      "expected_behavior": "to_dict 应包含所有字段，list_by_priority 应返回排序列表",
+      "success_criteria": [
+        "User.to_dict 包含 created_at",
+        "Task.to_dict 包含 priority",
+        "list_by_priority 返回排序列表",
+        "所有测试通过"
+      ],
+      "reference_fix": "添加缺失字段到 to_dict，将 sort() 改为 sorted()"
+    },
+    {
+      "id": "fix-file-processor-all",
+      "name": "修复 file_processor 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/file_processor.py 中 replace_in_file、append_line 和 find_longest_line 三个 bug",
+      "file": "examples/file_processor.py",
+      "test_target": "tests/test_file_processor.py",
+      "expected_behavior": "所有函数应正确处理边界情况",
+      "success_criteria": [
+        "replace_in_file 在 old==new 时返回 0",
+        "append_line 不产生双重换行",
+        "find_longest_line 返回第一个最长行",
+        "所有测试通过"
+      ],
+      "reference_fix": "修复三个函数的边界情况处理"
+    },
+    {
+      "id": "fix-string-utils-all",
+      "name": "修复 string_utils 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/string_utils.py 中 reverse_string、count_vowels、capitalize_words 和 truncate 四个 bug",
+      "file": "examples/string_utils.py",
+      "test_target": "tests/test_string_utils.py",
+      "expected_behavior": "所有字符串函数应正确工作",
+      "success_criteria": [
+        "reverse_string 正确反转",
+        "count_vowels 正确计数",
+        "capitalize_words 处理所有空白字符",
+        "truncate 为 '...' 留空间",
+        "所有测试通过"
+      ],
+      "reference_fix": "修复所有四个函数的 bug"
+    },
+    {
+      "id": "fix-api-client-all",
+      "name": "修复 api_client 多个 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/api_client.py 中 build_url、parse_response 和 retry_request 三个 bug",
+      "file": "examples/api_client.py",
+      "test_target": "tests/test_api_client.py",
+      "expected_behavior": "所有 API 客户端方法应正确工作",
+      "success_criteria": [
+        "build_url 正确编码参数",
+        "parse_response 包含 status 字段",
+        "retry_request 有延迟",
+        "所有测试通过"
+      ],
+      "reference_fix": "修复所有三个方法"
+    },
+    {
+      "id": "fix-all-calculator",
+      "name": "修复 buggy_calculator 所有 bug",
+      "difficulty": "hard",
+      "category": "bug-fix",
+      "task": "修复 workspace/examples/buggy_calculator.py 中所有 bug（subtract、factorial、divide、类型校验）",
+      "file": "examples/buggy_calculator.py",
+      "test_target": "tests/test_buggy_calculator.py",
+      "expected_behavior": "所有计算器方法应正确工作",
+      "success_criteria": [
+        "subtract 返回 a - b",
+        "factorial 正确计算",
+        "divide 检查除零",
+        "类型校验抛出 TypeError",
+        "所有测试通过"
+      ],
+      "reference_fix": "修复所有四个 bug"
+    }
+  ]
+}

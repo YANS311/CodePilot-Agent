@@ -1,0 +1,29 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Evaluation runtime
+workspace_eval/
+reports/eval_report.json
+
+# OS
+.DS_Store
+Thumbs.db

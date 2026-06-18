@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodePilot Agent</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+            background: #0d1117; color: #c9d1d9;
+            padding: 24px;
+        }
+        .layout { display: flex; gap: 24px; max-width: 1280px; margin: 0 auto; }
+        .main-col { flex: 1; min-width: 0; }
+        .side-col { width: 320px; flex-shrink: 0; }
+
+        h1 { color: #58a6ff; margin-bottom: 8px; font-size: 1.5rem; }
+        .subtitle { color: #8b949e; margin-bottom: 24px; font-size: 0.9rem; }
+        .input-area { display: flex; gap: 8px; margin-bottom: 24px; }
+        #task-input {
+            flex: 1; padding: 12px; border: 1px solid #30363d; border-radius: 6px;
+            background: #161b22; color: #c9d1d9; font-size: 14px; font-family: inherit;
+            resize: vertical; min-height: 44px;
+        }
+        #task-input:focus { border-color: #58a6ff; outline: none; }
+        #submit-btn {
+            padding: 12px 24px; background: #238636; color: #fff; border: none;
+            border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;
+            white-space: nowrap;
+        }
+        #submit-btn:hover { background: #2ea043; }
+        #submit-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+        .section { margin-bottom: 20px; }
+        .section-title {
+            font-size: 0.85rem; color: #8b949e; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;
+        }
+
+        /* Step timeline */
+        .step-item {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 14px; margin-bottom: 10px; font-size: 13px;
+        }
+        .step-id {
+            display: inline-block; background: #1f6feb; color: #fff;
+            padding: 1px 8px; border-radius: 10px; font-size: 11px;
+            font-weight: 600; margin-right: 6px;
+        }
+        .step-thought {
+            color: #d2a8ff; margin-bottom: 8px; padding: 8px;
+            background: #1c1028; border-radius: 4px; border-left: 3px solid #a371f7;
+        }
+        .step-thought::before { content: "Thinking: "; color: #a371f7; font-weight: 600; }
+        .step-action { color: #58a6ff; margin-bottom: 6px; }
+        .step-action::before { content: "Action: "; font-weight: 600; }
+        .step-observation {
+            background: #0d1117; border-radius: 4px; padding: 8px;
+            font-family: monospace; white-space: pre-wrap; max-height: 200px;
+            overflow-y: auto; font-size: 12px; color: #8b949e;
+        }
+        .step-observation::before { content: "Observation: "; color: #3fb950; font-weight: 600; }
+        .step-badge {
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+        }
+        .step-badge.success { background: #238636; color: #fff; }
+        .step-badge.fail { background: #da3633; color: #fff; }
+
+        .diff-box {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; white-space: pre-wrap; font-family: monospace;
+            font-size: 12px; max-height: 300px; overflow-y: auto;
+            color: #7ee787;
+        }
+        .warn-box {
+            background: #2d2200; border: 1px solid #bb8009; border-radius: 6px;
+            padding: 12px; font-size: 13px; color: #e3b341; margin-bottom: 16px;
+        }
+
+        /* Markdown answer box */
+        .answer-box {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 16px; line-height: 1.6; font-size: 14px;
+        }
+        .answer-box.has-content { border-color: #238636; }
+        .answer-box p { margin-bottom: 10px; }
+        .answer-box p:last-child { margin-bottom: 0; }
+        .answer-box code {
+            background: #1c2128; padding: 2px 6px; border-radius: 4px;
+            font-family: monospace; font-size: 13px; color: #79c0ff;
+        }
+        .answer-box pre {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin: 10px 0; overflow-x: auto;
+        }
+        .answer-box pre code {
+            background: none; padding: 0; color: #c9d1d9; font-size: 13px;
+        }
+        .answer-box ul, .answer-box ol {
+            margin: 8px 0; padding-left: 24px;
+        }
+        .answer-box li { margin-bottom: 4px; }
+        .answer-box h1, .answer-box h2, .answer-box h3 {
+            color: #58a6ff; margin: 12px 0 8px;
+        }
+        .answer-box h1 { font-size: 1.2rem; }
+        .answer-box h2 { font-size: 1.1rem; }
+        .answer-box h3 { font-size: 1rem; }
+        .answer-box strong { color: #f0f6fc; }
+        .answer-box em { color: #8b949e; }
+        .answer-box blockquote {
+            border-left: 3px solid #30363d; padding-left: 12px;
+            color: #8b949e; margin: 8px 0;
+        }
+
+        .new-file-hint {
+            background: #0d2818; border: 1px solid #238636; border-radius: 6px;
+            padding: 10px; font-size: 13px; color: #3fb950; margin-top: 12px;
+        }
+
+        /* Test Result Card */
+        .test-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 16px; margin-bottom: 16px;
+        }
+        .test-card-header {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+        }
+        .test-card-title {
+            font-size: 0.85rem; color: #8b949e; text-transform: uppercase;
+            letter-spacing: 0.5px; font-weight: 600;
+        }
+        .test-card-badge {
+            padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+        }
+        .test-card-badge.pass { background: #238636; color: #fff; }
+        .test-card-badge.fail { background: #da3633; color: #fff; }
+        .test-card-stats {
+            display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px;
+        }
+        .test-stat { display: flex; align-items: center; gap: 4px; }
+        .test-stat .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+        }
+        .test-stat .dot.green { background: #3fb950; }
+        .test-stat .dot.red { background: #f85149; }
+        .test-card-output {
+            background: #0d1117; border-radius: 4px; padding: 10px;
+            font-family: monospace; white-space: pre-wrap; max-height: 300px;
+            overflow-y: auto; font-size: 12px; color: #8b949e;
+        }
+
+        #loading { display: none; color: #8b949e; padding: 16px 0; }
+        #loading.active { display: block; }
+        .spinner {
+            display: inline-block; width: 16px; height: 16px; border: 2px solid #30363d;
+            border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.6s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Workspace 面板 ── */
+        .ws-panel {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 16px; position: sticky; top: 24px;
+        }
+        .ws-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .ws-title {
+            font-size: 0.85rem; color: #8b949e; text-transform: uppercase;
+            letter-spacing: 0.5px; font-weight: 600;
+        }
+        .ws-refresh {
+            background: none; border: 1px solid #30363d; color: #8b949e;
+            padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+        }
+        .ws-refresh:hover { border-color: #58a6ff; color: #58a6ff; }
+        .ws-file-list { max-height: 50vh; overflow-y: auto; }
+        .ws-file-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
+            transition: background 0.3s;
+        }
+        .ws-file-item:hover { background: #1c2128; }
+        .ws-file-item.highlight {
+            background: #1a3a1a; border-left: 3px solid #3fb950;
+            animation: highlight-fade 3s ease-out forwards;
+        }
+        @keyframes highlight-fade {
+            0% { background: #1a3a1a; }
+            70% { background: #1a3a1a; }
+            100% { background: transparent; border-left-color: transparent; }
+        }
+        .ws-file-name { color: #58a6ff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ws-file-size { color: #484f58; font-size: 11px; margin-left: 8px; white-space: nowrap; }
+        .ws-file-actions { display: flex; gap: 4px; margin-left: 6px; }
+        .ws-file-btn {
+            background: none; border: none; color: #8b949e; cursor: pointer;
+            font-size: 12px; padding: 2px 4px; border-radius: 3px;
+        }
+        .ws-file-btn:hover { color: #58a6ff; background: #1c2128; }
+
+        /* 预览模态框 */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            z-index: 100; justify-content: center; align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            width: 90%; max-width: 800px; max-height: 80vh; display: flex; flex-direction: column;
+        }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 16px; border-bottom: 1px solid #30363d;
+        }
+        .modal-header span { color: #58a6ff; font-weight: 600; font-size: 14px; }
+        .modal-close {
+            background: none; border: none; color: #8b949e; font-size: 20px;
+            cursor: pointer; padding: 0 4px;
+        }
+        .modal-close:hover { color: #f85149; }
+        .modal-body {
+            padding: 16px; overflow: auto; flex: 1;
+        }
+        .modal-body pre {
+            margin: 0; font-family: monospace; font-size: 13px;
+            white-space: pre-wrap; color: #c9d1d9; line-height: 1.5;
+        }
+        .modal-footer {
+            padding: 10px 16px; border-top: 1px solid #30363d;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-footer a {
+            color: #58a6ff; text-decoration: none; font-size: 13px;
+        }
+        .modal-footer a:hover { text-decoration: underline; }
+        .truncated-notice { color: #e3b341; font-size: 12px; }
+
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .side-col { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <h1>CodePilot Agent</h1>
+    <p class="subtitle">Python Coding Agent &mdash; 输入任务，Agent 自动搜索、读取、修改代码</p>
+
+    <div class="layout">
+        <!-- 左侧：主内容 -->
+        <div class="main-col">
+            <div class="input-area">
+                <textarea id="task-input" placeholder="例如：把 buggy_calculator.py 里的 subtract 函数改正确" rows="2"></textarea>
+                <button id="submit-btn" onclick="submitTask()">运行</button>
+            </div>
+
+            <div id="loading"><span class="spinner"></span>Agent 正在执行任务...</div>
+
+            <div id="results" style="display:none;">
+                <div id="warn-container"></div>
+
+                <div id="test-result-container"></div>
+
+                <div class="section" id="steps-section">
+                    <div class="section-title">执行步骤 (Thought → Action → Observation)</div>
+                    <div id="steps-list"></div>
+                </div>
+
+                <div class="section" id="diff-section" style="display:none;">
+                    <div class="section-title">Git Diff</div>
+                    <div class="diff-box" id="diff-content"></div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">最终回答</div>
+                    <div class="answer-box" id="answer-box"></div>
+                </div>
+            </div>
+
+            <div id="new-file-hint" style="display:none;" class="new-file-hint"></div>
+        </div>
+
+        <!-- 右侧：Workspace 文件面板 -->
+        <div class="side-col">
+            <div class="ws-panel">
+                <div class="ws-header">
+                    <span class="ws-title">Workspace 文件</span>
+                    <button class="ws-refresh" onclick="refreshFileList()">刷新</button>
+                </div>
+                <div id="ws-file-list" class="ws-file-list">
+                    <div style="color:#484f58;font-size:13px;">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 预览模态框 -->
+    <div class="modal-overlay" id="preview-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span id="preview-filename"></span>
+                <button class="modal-close" onclick="closePreview()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre id="preview-content"></pre>
+            </div>
+            <div class="modal-footer">
+                <span id="preview-truncated" class="truncated-notice" style="display:none;">文件过大，内容已截断（最大 100KB）</span>
+                <a id="preview-download" href="#">下载此文件</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ── 配置 marked.js ──
+    marked.setOptions({ breaks: true, gfm: true });
+
+    // ── Workspace 文件管理 ──
+    let lastKnownFiles = new Set();
+
+    async function refreshFileList() {
+        const listEl = document.getElementById('ws-file-list');
+        try {
+            const resp = await fetch('/api/files');
+            if (!resp.ok) throw new Error('加载失败');
+            const data = await resp.json();
+            renderFileList(data.files);
+        } catch (e) {
+            listEl.innerHTML = `<div style="color:#da3633;font-size:13px;">${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderFileList(files) {
+        const listEl = document.getElementById('ws-file-list');
+        // 按路径排序
+        files.sort((a, b) => a.path.localeCompare(b.path));
+
+        listEl.innerHTML = '';
+        if (files.length === 0) {
+            listEl.innerHTML = '<div style="color:#484f58;font-size:13px;">workspace 为空</div>';
+            return;
+        }
+
+        const currentPaths = new Set(files.map(f => f.path));
+
+        for (const f of files) {
+            const item = document.createElement('div');
+            item.className = 'ws-file-item';
+            const sizeStr = formatSize(f.size);
+
+            // 高亮新文件（之前不在列表中的文件）
+            if (lastKnownFiles.size > 0 && !lastKnownFiles.has(f.path)) {
+                item.classList.add('highlight');
+            }
+
+            item.innerHTML = `
+                <span class="ws-file-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span>
+                <span class="ws-file-size">${sizeStr}</span>
+                <div class="ws-file-actions">
+                    <button class="ws-file-btn" title="预览" onclick="previewFile('${escapeJs(f.path)}')">&#128065;</button>
+                    <button class="ws-file-btn" title="下载" onclick="downloadFile('${escapeJs(f.path)}')">&#11015;</button>
+                </div>
+            `;
+            item.querySelector('.ws-file-name').addEventListener('click', () => previewFile(f.path));
+            listEl.appendChild(item);
+        }
+
+        lastKnownFiles = currentPaths;
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function previewFile(filePath) {
+        const modal = document.getElementById('preview-modal');
+        const filenameEl = document.getElementById('preview-filename');
+        const contentEl = document.getElementById('preview-content');
+        const truncatedEl = document.getElementById('preview-truncated');
+        const downloadEl = document.getElementById('preview-download');
+
+        filenameEl.textContent = filePath;
+        contentEl.textContent = '加载中...';
+        truncatedEl.style.display = 'none';
+        downloadEl.href = '/api/files/download?path=' + encodeURIComponent(filePath);
+        modal.classList.add('active');
+
+        try {
+            const resp = await fetch('/api/files/content?path=' + encodeURIComponent(filePath));
+            if (!resp.ok) {
+                const err = await resp.json();
+                contentEl.textContent = '错误: ' + (err.detail || '加载失败');
+                return;
+            }
+            const data = await resp.json();
+            contentEl.textContent = data.content;
+            if (data.truncated) truncatedEl.style.display = 'inline';
+        } catch (e) {
+            contentEl.textContent = '错误: ' + e.message;
+        }
+    }
+
+    function closePreview() {
+        document.getElementById('preview-modal').classList.remove('active');
+    }
+
+    function downloadFile(filePath) {
+        window.open('/api/files/download?path=' + encodeURIComponent(filePath), '_blank');
+    }
+
+    // ── Agent 任务 ──
+
+    async function submitTask() {
+        const input = document.getElementById('task-input');
+        const btn = document.getElementById('submit-btn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const hint = document.getElementById('new-file-hint');
+
+        const task = input.value.trim();
+        if (!task) { input.focus(); return; }
+
+        btn.disabled = true;
+        loading.classList.add('active');
+        results.style.display = 'none';
+        hint.style.display = 'none';
+
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.detail || '请求失败');
+            }
+            const data = await resp.json();
+            renderResults(data);
+            refreshFileList();
+
+            // 检查是否有 write_file 操作，提示新文件
+            const writeOps = data.tool_results?.filter(tr => tr.name === 'write_file' && tr.success);
+            if (writeOps && writeOps.length > 0) {
+                hint.textContent = `Agent 已生成/修改 ${writeOps.length} 个文件，可在右侧 Workspace 面板中查看和下载。`;
+                hint.style.display = 'block';
+            }
+        } catch (e) {
+            alert('错误: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            loading.classList.remove('active');
+        }
+    }
+
+    function renderResults(data) {
+        const results = document.getElementById('results');
+        const stepsList = document.getElementById('steps-list');
+        const answerBox = document.getElementById('answer-box');
+        const diffSection = document.getElementById('diff-section');
+        const diffContent = document.getElementById('diff-content');
+        const warnContainer = document.getElementById('warn-container');
+        const testContainer = document.getElementById('test-result-container');
+        warnContainer.innerHTML = '';
+        testContainer.innerHTML = '';
+
+        // 渲染步骤
+        stepsList.innerHTML = '';
+        if (data.steps && data.steps.length > 0) {
+            for (const step of data.steps) {
+                const item = document.createElement('div');
+                item.className = 'step-item';
+                const badge = step.success
+                    ? '<span class="step-badge success">OK</span>'
+                    : '<span class="step-badge fail">FAIL</span>';
+                let html = `<span class="step-id">Step ${step.step_id}</span> ${badge}`;
+                if (step.thought) {
+                    html += `<div class="step-thought">${escapeHtml(step.thought)}</div>`;
+                }
+                html += `<div class="step-action">${escapeHtml(step.tool_name)}(${escapeHtml(JSON.stringify(step.tool_args))})</div>`;
+                html += `<div class="step-observation">${escapeHtml(step.observation)}</div>`;
+                item.innerHTML = html;
+                stepsList.appendChild(item);
+            }
+        } else {
+            stepsList.innerHTML = '<div class="step-item">无工具调用（直接回答）</div>';
+        }
+
+        // 渲染 Test Result Card
+        const testResult = data.tool_results?.find(tr => tr.name === 'run_tests' && tr.success);
+        if (testResult) {
+            try {
+                const testOutput = JSON.parse(testResult.output);
+                const card = document.createElement('div');
+                card.className = 'test-card';
+                const badgeClass = testOutput.success ? 'pass' : 'fail';
+                const badgeText = testOutput.success ? 'PASSED' : 'FAILED';
+                card.innerHTML = `
+                    <div class="test-card-header">
+                        <span class="test-card-title">Test Result</span>
+                        <span class="test-card-badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    <div class="test-card-stats">
+                        <span class="test-stat"><span class="dot green"></span> ${testOutput.passed} passed</span>
+                        <span class="test-stat"><span class="dot red"></span> ${testOutput.failed} failed</span>
+                    </div>
+                    <div class="test-card-output">${escapeHtml(testOutput.stdout || testOutput.stderr || '')}</div>
+                `;
+                testContainer.appendChild(card);
+            } catch (e) {
+                // JSON 解析失败，忽略
+            }
+        }
+
+        // 检查 git_diff 错误
+        const gitDiffError = data.tool_results?.find(tr =>
+            tr.name === 'git_diff' && tr.output && tr.output.includes('不是 git 仓库')
+        );
+        if (gitDiffError) {
+            warnContainer.innerHTML = `
+                <div class="warn-box">
+                    当前 workspace 尚未初始化 Git，diff 不可用。可在 workspace 下执行：
+                    <code>git init && git add . && git commit -m "init"</code>
+                </div>
+            `;
+        }
+
+        // 渲染 git diff
+        const diffResult = data.tool_results?.find(tr => tr.name === 'git_diff' && tr.success);
+        if (diffResult && !diffResult.output.startsWith('无变更') && !diffResult.output.startsWith('错误')) {
+            diffContent.textContent = diffResult.output;
+            diffSection.style.display = 'block';
+        } else {
+            diffSection.style.display = 'none';
+        }
+
+        // 渲染最终回答 (Markdown)
+        const answerText = data.answer || '无回答';
+        answerBox.innerHTML = marked.parse(answerText);
+        answerBox.className = data.answer ? 'answer-box has-content' : 'answer-box';
+        results.style.display = 'block';
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeJs(str) {
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    // Ctrl+Enter 提交
+    document.getElementById('task-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            submitTask();
+        }
+    });
+
+    // ESC 关闭预览
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closePreview();
+    });
+
+    // 点击模态框背景关闭
+    document.getElementById('preview-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closePreview();
+    });
+
+    // 页面加载时获取文件列表
+    refreshFileList();
+    </script>
+</body>
+</html>
