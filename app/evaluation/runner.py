@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# 难度对应的工具调用预算
+DIFFICULTY_BUDGET = {
+    "easy": 8,
+    "medium": 12,
+    "hard": 20,
+}
+
 
 class EvaluationRunner:
     """评测执行器 — 管理任务执行和 workspace 隔离。"""
@@ -78,14 +85,17 @@ class EvaluationRunner:
 
         Args:
             task: 评测任务定义。
-            agent_factory: 可调用对象，接受 workspace_root 参数返回 ReActAgent。
+            agent_factory: 可调用对象，接受 workspace_root 和 max_tool_calls 参数返回 ReActAgent。
         """
         task_ws = self._prepare_workspace(task.id)
         t0 = time.monotonic()
 
         try:
+            # 根据难度设置工具调用预算
+            max_calls = DIFFICULTY_BUDGET.get(task.difficulty, 20)
+
             # 创建指向独立 workspace 的 Agent
-            agent = agent_factory(str(task_ws))
+            agent = agent_factory(str(task_ws), max_calls)
 
             # 执行 Agent
             agent_result = await agent.run(task.task)

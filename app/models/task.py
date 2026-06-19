@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,7 @@ class AgentTask(BaseModel):
     model: str = "gpt-4o"
     status: TaskStatus = TaskStatus.PENDING
     created_at: float = Field(default_factory=time.time)
-    answer: str | None = None
+    answer: Optional[str] = None
 
 
 class TaskRequest(BaseModel):
@@ -39,4 +40,4 @@ class TaskResponse(BaseModel):
 
     task_id: str
     status: TaskStatus
-    answer: str | None = None
+    answer: Optional[str] = None

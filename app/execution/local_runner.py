@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 from app.execution.base import BaseExecutionRunner, ExecutionResult
 
@@ -29,7 +30,7 @@ class LocalExecutionRunner(BaseExecutionRunner):
     async def run_pytest(
         self,
         workspace_path: str,
-        target: str | None = None,
+        target: Optional[str] = None,
     ) -> ExecutionResult:
         ws = Path(workspace_path).resolve()
         if not ws.exists():
@@ -39,10 +40,16 @@ class LocalExecutionRunner(BaseExecutionRunner):
         cmd = [sys.executable, "-m", "pytest"]
 
         if target:
-            target_path = (ws / target).resolve()
+            # pytest node ID 格式: path/to/test.py::TestClass::test_method
+            # 只取文件路径部分做安全检查，完整 node ID 传给 pytest
+            file_part = target.split("::")[0]
+            target_path = (ws / file_part).resolve()
             if not str(target_path).startswith(str(ws)):
                 return ExecutionResult(error=f"target 路径超出范围 — {target}")
             cmd.append(str(target_path))
+            # 如果有 node ID 后缀，追加到命令
+            if "::" in target:
+                cmd[-1] = str(target_path) + target[len(file_part):]
 
         cmd.extend(["-v", "--tb=short", "--no-header"])
 

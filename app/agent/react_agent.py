@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agent.budget import ToolBudget
 from app.agent.prompts import SYSTEM_PROMPT
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
@@ -19,6 +20,20 @@ _TOOL_DRIFT_PATTERNS = [
     re.compile(r"read_file\s*\(", re.IGNORECASE),
     re.compile(r"Action:\s*write_file", re.IGNORECASE),
     re.compile(r"<｜｜DSML｜｜invoke\s+name=\"write_file\"", re.IGNORECASE),
+]
+
+# 检测完成声明
+_COMPLETION_PATTERNS = [
+    re.compile(r"已修复", re.IGNORECASE),
+    re.compile(r"已(成功)?修改", re.IGNORECASE),
+    re.compile(r"(bug|问题).*已(被)?修复", re.IGNORECASE),
+    re.compile(r"修复(完成|成功|完毕)", re.IGNORECASE),
+    re.compile(r"修改(完成|成功|完毕)", re.IGNORECASE),
+    re.compile(r"已.*添加.*验证", re.IGNORECASE),
+    re.compile(r"(问题|bug)不存在", re.IGNORECASE),
+    re.compile(r"代码.*正确", re.IGNORECASE),
+    re.compile(r"(测试|test).*通过", re.IGNORECASE),
+    re.compile(r"所有.*修复", re.IGNORECASE),
 ]
 
 MAX_TOOL_CALLS = 5
@@ -58,6 +73,8 @@ class ReActAgent:
         self._workspace_root = workspace_root
         self._max_tool_calls = max_tool_calls
         self._has_drift_corrected = False
+        self._has_completion_corrected = False
+        self._budget = ToolBudget(max_calls=max_tool_calls)
 
     async def run(self, task: str) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
@@ -73,6 +90,11 @@ class ReActAgent:
         tool_calls_count = 0
 
         for iteration in range(self._max_tool_calls):
+            # 注入预算提示
+            budget_prompt = self._budget.get_budget_prompt()
+            if budget_prompt:
+                messages.append({"role": "system", "content": budget_prompt})
+
             response: ChatResponse = await self._llm.chat(
                 messages, tools=tools_schema if tools_schema else None
             )
@@ -92,6 +114,25 @@ class ReActAgent:
                             "你刚才把工具调用写进了文本，这是禁止的行为。"
                             "你必须使用真实 tool_call 调用 write_file，不允许在文本中伪造工具调用。"
                             "请立即使用 write_file tool_call 完成修改。"
+                        ),
+                    })
+                    continue
+
+                # Guardrail: Completion Chain — 声称完成但未执行 write_file
+                if (
+                    not self._has_completion_corrected
+                    and self._has_completion_claim(answer)
+                    and not self._has_write_file_in_trajectory(steps)
+                ):
+                    self._has_completion_corrected = True
+                    logger.warning("Completion claimed without write_file, injecting correction")
+                    messages.append({"role": "assistant", "content": answer})
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "你声称已修复问题，但未执行 write_file。"
+                            "你必须使用 write_file tool_call 实际修改文件，然后用 run_tests 验证。"
+                            "不要在文本中描述修改，必须通过工具执行。"
                         ),
                     })
                     continue
@@ -116,13 +157,31 @@ class ReActAgent:
 
             # 逐个执行 tool_call
             for tc_info in response.tool_calls:
-                tool_calls_count += 1
-                if tool_calls_count > self._max_tool_calls:
+                # 检查预算
+                if self._budget.should_stop():
+                    logger.warning("Budget exhausted, stopping tool calls")
                     break
 
+                tool_calls_count += 1
+                self._budget.consume()
+
+                # 重复搜索检查
+                if tc_info.name == "search_code":
+                    query = tc_info.arguments.get("query", "")
+                    if self._budget.is_duplicate_search(query):
+                        # 注入警告但不阻止执行
+                        logger.info("Duplicate search detected: %s", query)
+                    self._budget.record_search(query)
+
+                # 记录已读取的文件
+                if tc_info.name == "read_file":
+                    path = tc_info.arguments.get("path", "")
+                    self._budget.record_read(path)
+
                 logger.info(
-                    "Tool call #%d: %s(%s)",
+                    "Tool call #%d: %s(%s) [remaining=%d]",
                     tool_calls_count, tc_info.name, tc_info.arguments,
+                    self._budget.remaining_calls,
                 )
 
                 tool_call = ToolCall(
@@ -132,6 +191,10 @@ class ReActAgent:
                     tool_call, self._workspace_root
                 )
                 tool_results.append(result)
+
+                # 从 search_code 结果中缓存文件路径
+                if tc_info.name == "search_code" and result.success:
+                    self._extract_and_cache_paths(tc_info.arguments.get("query", ""), result.output)
 
                 # 构建 AgentStep
                 steps.append(AgentStep(
@@ -169,6 +232,26 @@ class ReActAgent:
     def _has_fake_tool_calls(text: str) -> bool:
         """检测文本中是否包含伪造的工具调用。"""
         return any(p.search(text) for p in _TOOL_DRIFT_PATTERNS)
+
+    @staticmethod
+    def _has_completion_claim(text: str) -> bool:
+        """检测文本中是否声称任务已完成。"""
+        return any(p.search(text) for p in _COMPLETION_PATTERNS)
+
+    @staticmethod
+    def _has_write_file_in_trajectory(steps: list[AgentStep]) -> bool:
+        """检查执行轨迹中是否调用过 write_file。"""
+        return any(s.tool_name == "write_file" for s in steps)
+
+    def _extract_and_cache_paths(self, query: str, search_output: str) -> None:
+        """从 search_code 输出中提取文件路径并缓存。"""
+        import re
+        # 匹配 "文件路径:行号" 格式
+        path_pattern = re.compile(r"^([a-zA-Z_][\w./]*\.py):\d+", re.MULTILINE)
+        matches = path_pattern.findall(search_output)
+        if matches:
+            # 缓存第一个找到的路径
+            self._budget.cache_path(query, matches[0])
 
     @staticmethod
     def _build_assistant_message(response: ChatResponse) -> dict[str, Any]:

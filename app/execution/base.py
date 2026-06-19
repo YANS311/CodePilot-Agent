@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -38,7 +38,7 @@ class BaseExecutionRunner(ABC):
     async def run_pytest(
         self,
         workspace_path: str,
-        target: str | None = None,
+        target: Optional[str] = None,
     ) -> ExecutionResult:
         """在指定 workspace 中执行 pytest。
 

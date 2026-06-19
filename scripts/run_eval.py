@@ -47,14 +47,14 @@ def _build_registry() -> ToolRegistry:
     return registry
 
 
-def _agent_factory(workspace_root: str) -> ReActAgent:
+def _agent_factory(workspace_root: str, max_tool_calls: int | None = None) -> ReActAgent:
     llm = LLMClient(settings)
     registry = _build_registry()
     return ReActAgent(
         llm=llm,
         registry=registry,
         workspace_root=workspace_root,
-        max_tool_calls=settings.max_tool_calls,
+        max_tool_calls=max_tool_calls or settings.max_tool_calls,
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,10 +17,10 @@ class ChatMessage(BaseModel):
     """
 
     role: Literal["system", "user", "assistant", "tool"]
-    content: str | None = None
-    tool_calls: list[ToolCall] | None = None
-    tool_call_id: str | None = None
-    name: str | None = None
+    content: Optional[str] = None
+    tool_calls: Optional[list[ToolCall]] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None
 
     def to_openai(self) -> dict:
         """转换为 OpenAI API 格式的 dict。"""

@@ -9,6 +9,7 @@ import asyncio
 import re
 import time
 from pathlib import Path
+from typing import Optional
 
 from app.execution.base import BaseExecutionRunner, ExecutionResult
 
@@ -32,7 +33,7 @@ class DockerExecutionRunner(BaseExecutionRunner):
     async def run_pytest(
         self,
         workspace_path: str,
-        target: str | None = None,
+        target: Optional[str] = None,
     ) -> ExecutionResult:
         ws = Path(workspace_path).resolve()
         if not ws.exists():

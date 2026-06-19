@@ -217,7 +217,7 @@ class TestRunnerRunTask:
             tool_calls_count=3,
         ))
 
-        def factory(ws_root):
+        def factory(ws_root, max_calls=None):
             mock_agent._workspace_root = ws_root
             return mock_agent
 
@@ -257,7 +257,7 @@ class TestRunnerRunTask:
         )
 
         result = asyncio.get_event_loop().run_until_complete(
-            runner.run_task(task, lambda ws: mock_agent)
+            runner.run_task(task, lambda ws, max_calls=None: mock_agent)
         )
 
         assert result.success is False

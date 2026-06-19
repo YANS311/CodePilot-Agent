@@ -26,6 +26,7 @@ class EvalMetrics:
     pass_at_1: float = 0.0  # Pass@1: 单次尝试成功率
     tool_efficiency: float = 0.0  # Tool Efficiency: 成功任务的工具调用效率
     tool_calls_per_success: float = 0.0  # 每个成功任务的平均工具调用次数
+    budget_efficiency: float = 0.0  # Budget Efficiency: 成功任务数 / 平均工具调用数
 
     # 错误分布
     error_distribution: dict[str, int] = field(default_factory=dict)
@@ -48,6 +49,7 @@ class EvalMetrics:
             "pass_at_1": self.pass_at_1,
             "tool_efficiency": self.tool_efficiency,
             "tool_calls_per_success": self.tool_calls_per_success,
+            "budget_efficiency": self.budget_efficiency,
             "error_distribution": self.error_distribution,
             "success_by_difficulty": self.success_by_difficulty,
             "success_by_category": self.success_by_category,
@@ -82,6 +84,10 @@ def compute_metrics(
 
     # Tool Calls per Success: 每个成功任务的平均工具调用次数
     tool_calls_per_success = successful_tools / successful if successful > 0 else 0.0
+
+    # Budget Efficiency: 成功任务数 / 平均工具调用数
+    avg_tools = total_tools / total if total else 0.0
+    budget_efficiency = successful / avg_tools if avg_tools > 0 else 0.0
 
     # 错误分布统计
     error_distribution: dict[str, int] = {}
@@ -129,6 +135,7 @@ def compute_metrics(
         pass_at_1=pass_at_1,
         tool_efficiency=tool_efficiency,
         tool_calls_per_success=tool_calls_per_success,
+        budget_efficiency=budget_efficiency,
         error_distribution=error_distribution,
         success_by_difficulty=by_difficulty,
         success_by_category=by_category,
