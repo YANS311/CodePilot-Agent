@@ -1,107 +1,159 @@
 # CodePilot Agent
 
-轻量级 Python Coding Agent，基于 ReAct 循环 + OpenAI Function Calling 实现单 Agent 编码辅助。
+> A mini coding agent that thinks, acts, and verifies — built from scratch in Python.
 
-## 核心能力
+CodePilot is a lightweight **ReAct Agent** with **Tool Calling**, designed to autonomously fix bugs in Python codebases. It follows a structured reasoning loop: search the code, read the relevant files, write fixes, run tests, and report diffs.
 
-- **ReAct Agent Loop** — Think → Act → Observe 循环驱动
-- **Tool Calling** — 基于 OpenAI Function Calling 协议的工具调用
-- **6 个内置工具** — search_code / read_file / write_file / run_tests / git_diff / git_status
-- **Prompt Guardrail** — 检测伪造工具调用并自动纠正
-- **Execution Environment** — 支持 Local / Docker 两种执行模式
-- **Evaluation Framework** — 30 个评测任务，自动计算 TSR / Pass@1 等指标
+```
+User: "Fix the subtract bug in calculator.py"
+         │
+         ▼
+┌─────────────────────────────────────────────────────┐
+│              ReAct Agent Loop                       │
+│                                                     │
+│  Think: "subtract returns a + b, should be a - b"  │
+│    Act: write_file("a - b")                        │
+│  Observe: file updated                             │
+│    Act: run_tests("test_buggy_calculator")          │
+│  Observe: 1 passed, 0 failed                       │
+│    Act: git_diff                                   │
+│  Observe: +1 -1                                    │
+│  Answer: "Fixed. subtract now returns a - b"       │
+└─────────────────────────────────────────────────────┘
+```
 
-## 技术栈
+## Eval Results
 
-- Python 3.11+
-- FastAPI
-- Pydantic / Pydantic Settings
-- OpenAI Compatible API (GPT-4o / DeepSeek / 本地模型)
-- Docker (可选，沙箱执行)
+30-task benchmark across three difficulty tiers:
 
-## 快速启动
+| Difficulty | Tasks | Pass Rate | Description |
+|:-----------|------:|----------:|-------------|
+| Easy       |    10 | **100%**  | Single-line fixes, off-by-one, import errors |
+| Medium     |    12 | **92%**   | Multi-function bugs, missing fields, URL encoding |
+| Hard       |     8 | **75%**   | Cross-file fixes, multiple bugs in one file |
+| **Total**  | **30**| **90%**   | |
+
+Key metrics:
+- **TSR (Task Success Rate)**: 90.0%
+- **Pass@1**: 90.0%
+- **Test Pass Rate**: 96.6%
+- **Avg Tool Calls per Task**: 8.4
+- **Avg Duration per Task**: ~55s
+
+See [docs/evaluation.md](docs/evaluation.md) for full breakdown.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        FastAPI Server                         │
+│                         (app/main.py)                        │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐  │
+│  │  ReAct Agent │───▶│  LLM Client  │───▶│  OpenAI API    │  │
+│  │  (Loop)      │◀───│  (httpx)     │◀───│  (GPT-4o)      │  │
+│  └──────┬──────┘    └──────────────┘    └────────────────┘  │
+│         │                                                     │
+│         │  tool_calls                                         │
+│         ▼                                                     │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │                  Tool Registry                        │    │
+│  ├──────────┬──────────┬──────────┬──────────┬─────────┤    │
+│  │search_code│read_file│write_file│run_tests │git_diff │    │
+│  └──────────┴──────────┴──────────┴────┬─────┴─────────┘    │
+│                                        │                     │
+│                                        ▼                     │
+│                              ┌──────────────────┐            │
+│                              │ Execution Runner │            │
+│                              │ (Local / Docker) │            │
+│                              └──────────────────┘            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Core loop**: Think -> Act -> Observe, repeated until the task is resolved or the tool call limit is reached.
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **ReAct Agent** | Think-Act-Observe loop with OpenAI Function Calling |
+| **6 Tools** | `search_code` `read_file` `write_file` `run_tests` `git_diff` `git_status` |
+| **Prompt Guardrail** | Detects and corrects fake tool calls in model text output |
+| **Execution Sandbox** | Local subprocess or Docker `--read-only --network none` |
+| **Evaluation Framework** | 30 tasks, auto metrics, error taxonomy, markdown reports |
+| **Error Taxonomy** | 7 error types with automatic root-cause classification |
+
+## Quick Start
 
 ```bash
-# 1. 安装依赖
+# Install
 pip install -r requirements.txt
 
-# 2. 配置环境变量
+# Configure
 cp .env.example .env
-# 编辑 .env 填入你的 API Key
+# Edit .env with your API key
 
-# 3. 启动服务
+# Run server
 uvicorn app.main:app --reload
 
-# 4. 验证
+# Verify
 curl http://localhost:8000/health
 # {"status":"ok"}
 ```
 
-## 运行测试
+## Demo
 
-```bash
-pip install pytest httpx
-pytest tests/ -v
+> TODO: Add screenshot or GIF of the agent fixing a bug end-to-end
+
+```
+$ python scripts/run_eval.py --tasks fix-subtract
+Loaded 30 tasks
+  [1] fix-subtract: PASS (test=PASS, tools=7, 26s)
+Task Success Rate: 100.0% (1/1)
 ```
 
-## 运行评测
+## Run Tests
 
 ```bash
-# 全部 30 个任务
-python scripts/run_eval.py
-
-# 指定任务
-python scripts/run_eval.py --tasks fix-subtract fix-divide-zero
-
-# 报告输出到 reports/eval_report.md
+pytest tests/ -v          # 147 unit tests
 ```
 
-## 项目结构
+## Run Full Evaluation
+
+```bash
+python scripts/run_eval.py                    # All 30 tasks
+python scripts/run_eval.py --tasks fix-subtract  # Single task
+# Output: reports/eval_report.md
+```
+
+## Project Structure
 
 ```
 app/
-├── main.py              # FastAPI 入口
-├── core/
-│   └── config.py        # 统一配置 (Pydantic Settings)
+├── main.py                  # FastAPI entry
+├── core/config.py           # Pydantic Settings
 ├── agent/
-│   ├── react_agent.py   # ReAct Agent Loop
-│   └── prompts.py       # System Prompt
-├── tools/               # 6 个内置工具
-│   ├── registry.py      # 工具注册中心
-│   ├── search_code.py
-│   ├── read_file.py
-│   ├── write_file.py
-│   ├── run_tests.py
-│   ├── git_diff.py
-│   └── git_status.py
-├── execution/
-│   ├── base.py          # Runner ABC
-│   ├── local_runner.py  # 本地执行
-│   ├── docker_runner.py # Docker 沙箱
-│   └── factory.py       # Runner 工厂
-└── evaluation/
-    ├── schema.py        # EvalTask / EvalResult
-    ├── runner.py        # 评测运行器
-    ├── metrics.py       # 指标计算
-    ├── analyzer.py      # 错误归因
-    └── error_taxonomy.py # 错误分类
+│   ├── react_agent.py       # ReAct loop + guardrail
+│   └── prompts.py           # System prompt
+├── tools/                   # 6 tools + registry
+├── execution/               # Local / Docker runners
+└── evaluation/              # Metrics, analyzer, taxonomy
 
-workspace/               # 工作区种子 (含 examples + tests)
-evaluation/tasks.json    # 30 个评测任务定义
-scripts/run_eval.py      # 评测 CLI
-tests/                   # 147 个单元测试
+workspace/                   # Bug seed files + tests
+evaluation/tasks.json        # 30 eval tasks
+scripts/run_eval.py          # Eval CLI
+tests/                       # 147 unit tests
+docs/                        # Architecture & eval docs
 ```
 
-## 评测指标
+## Tech Stack
 
-| 指标 | 说明 |
-|------|------|
-| TSR (Task Success Rate) | 任务成功率 |
-| Pass@1 | 单次尝试成功率 |
-| Tool Efficiency | 工具调用效率 |
-| 任务按难度 | Easy / Medium / Hard 分组 |
-| 错误分布 | 7 种错误类型自动归因 |
+Python 3.11+ | FastAPI | Pydantic Settings | OpenAI Compatible API | Docker (optional)
 
 ## License
 
 MIT
+
+---
+Built with Claude Code
