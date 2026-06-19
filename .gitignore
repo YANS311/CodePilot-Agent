@@ -24,6 +24,9 @@ htmlcov/
 workspace_eval/
 reports/eval_report.json
 
+# Project docs (local only)
+PROJECT_SUMMARY.md
+
 # OS
 .DS_Store
 Thumbs.db
