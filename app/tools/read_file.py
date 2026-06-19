@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from app.tools.workspace_tool import WorkspaceTool
 
 
@@ -19,11 +21,26 @@ class ReadFileTool(WorkspaceTool):
         "required": ["path"],
     }
 
+    def __init__(self, *, index=None) -> None:
+        self._index = index
+
     async def run(self, *, workspace_root: str, path: str, **_) -> str:
         try:
             target = self.safe_resolve(workspace_root, path)
         except ValueError as exc:
             return self.error(str(exc))
+
+        # 如果路径不存在，尝试用 resolver 模糊匹配
+        if not target.exists() and self._index:
+            from app.workspace.resolver import SmartFileResolver
+            resolver = SmartFileResolver(self._index)
+            resolved = resolver.resolve(path)
+            if resolved:
+                path = resolved
+                try:
+                    target = self.safe_resolve(workspace_root, path)
+                except ValueError as exc:
+                    return self.error(str(exc))
 
         if not target.exists():
             return self.error(f"文件不存在 — {path}")

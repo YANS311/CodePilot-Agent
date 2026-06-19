@@ -217,6 +217,30 @@
         }
         .ws-file-btn:hover { color: #58a6ff; background: #1c2128; }
 
+        /* ── 文件树视图 ── */
+        .tree-view { font-size: 13px; max-height: 30vh; overflow-y: auto; }
+        .tree-item {
+            padding: 2px 0; cursor: pointer; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .tree-item:hover { color: #58a6ff; }
+        .tree-dir { color: #8b949e; font-weight: 600; }
+        .tree-dir::before { content: "📁 "; }
+        .tree-file { color: #58a6ff; padding-left: 16px; }
+        .tree-file.py::before { content: "🐍 "; }
+        .tree-file.md::before { content: "📄 "; }
+        .tree-file.json::before { content: "📋 "; }
+        .tree-file.txt::before { content: "📝 "; }
+        .tree-file.default::before { content: "📄 "; }
+        .tree-indent { padding-left: 16px; }
+        .tree-toggle { cursor: pointer; user-select: none; }
+        .tree-toggle::before { content: "▼ "; font-size: 10px; }
+        .tree-toggle.collapsed::before { content: "▶ "; }
+        .tree-summary {
+            font-size: 11px; color: #484f58; margin-top: 8px;
+            padding: 6px 8px; background: #0d1117; border-radius: 4px;
+        }
+
         /* 预览模态框 */
         .modal-overlay {
             display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
@@ -321,6 +345,14 @@
                 <div id="ws-file-list" class="ws-file-list">
                     <div style="color:#484f58;font-size:13px;">加载中...</div>
                 </div>
+
+                <div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px;">
+                    <div class="section-title" style="margin-bottom:8px;">文件结构</div>
+                    <div id="file-tree" class="tree-view">
+                        <div style="color:#484f58;font-size:12px;">加载中...</div>
+                    </div>
+                    <div id="tree-summary" class="tree-summary" style="display:none;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -345,6 +377,76 @@
     <script>
     // ── 配置 marked.js ──
     marked.setOptions({ breaks: true, gfm: true });
+
+    // ── 文件树视图 ──
+    async function refreshFileTree() {
+        const treeEl = document.getElementById('file-tree');
+        const summaryEl = document.getElementById('tree-summary');
+        try {
+            let url = '/api/workspace/index';
+            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('加载失败');
+            const data = await resp.json();
+            renderFileTree(data.tree, treeEl);
+            // 显示摘要
+            if (data.summary) {
+                const s = data.summary;
+                summaryEl.textContent = `共 ${s.total_files} 个文件, ${s.python_files} 个 Python 文件`;
+                summaryEl.style.display = 'block';
+            }
+        } catch (e) {
+            treeEl.innerHTML = `<div style="color:#484f58;font-size:12px;">${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderFileTree(tree, container, depth = 0, parentPath = '') {
+        container.innerHTML = '';
+        if (!tree || typeof tree !== 'object') return;
+
+        // 渲染当前目录的文件
+        const files = tree.files || [];
+        for (const fname of files) {
+            const fileItem = document.createElement('div');
+            const ext = fname.split('.').pop().toLowerCase();
+            const extClass = ['py', 'md', 'json', 'txt'].includes(ext) ? ext : 'default';
+            fileItem.className = `tree-item tree-file ${extClass}`;
+            fileItem.style.paddingLeft = (depth * 16) + 'px';
+            fileItem.textContent = fname;
+            const filePath = parentPath ? `${parentPath}/${fname}` : fname;
+            fileItem.onclick = (e) => {
+                e.stopPropagation();
+                previewFile(filePath);
+            };
+            container.appendChild(fileItem);
+        }
+
+        // 渲染子目录
+        const dirs = tree.dirs || {};
+        for (const [dirName, subNode] of Object.entries(dirs)) {
+            const dirItem = document.createElement('div');
+            dirItem.className = 'tree-item tree-dir';
+            dirItem.style.paddingLeft = (depth * 16) + 'px';
+            dirItem.textContent = dirName;
+
+            const childContainer = document.createElement('div');
+            childContainer.className = 'tree-indent';
+            childContainer.style.display = 'block';
+
+            const subPath = parentPath ? `${parentPath}/${dirName}` : dirName;
+            renderFileTree(subNode, childContainer, depth + 1, subPath);
+
+            let expanded = true;
+            dirItem.onclick = () => {
+                expanded = !expanded;
+                childContainer.style.display = expanded ? 'block' : 'none';
+                dirItem.classList.toggle('collapsed', !expanded);
+            };
+
+            container.appendChild(dirItem);
+            container.appendChild(childContainer);
+        }
+    }
 
     // ── Workspace 文件管理 ──
     let lastKnownFiles = new Set();
@@ -661,8 +763,9 @@
             statusEl.textContent = `上传成功: ${data.file_count} 个文件`;
             statusEl.style.color = '#3fb950';
 
-            // 刷新文件列表
+            // 刷新文件列表和文件树
             refreshFileList();
+            refreshFileTree();
         } catch (e) {
             statusEl.textContent = '错误: ' + e.message;
             statusEl.style.color = '#da3633';
@@ -674,6 +777,7 @@
 
     // 页面加载时获取文件列表
     refreshFileList();
+    refreshFileTree();
     </script>
 </body>
 </html>

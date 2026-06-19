@@ -3,6 +3,7 @@ from __future__ import annotations
 import fnmatch
 import re
 from pathlib import Path
+from typing import Optional
 
 from app.tools.workspace_tool import WorkspaceTool
 
@@ -28,9 +29,31 @@ class SearchCodeTool(WorkspaceTool):
         "required": ["query"],
     }
 
+    def __init__(self, *, index=None) -> None:
+        self._index = index
+
     async def run(
         self, *, workspace_root: str, query: str, file_pattern: str = "", **_
     ) -> str:
+        # 优先使用索引定位文件
+        if self._index:
+            from app.workspace.resolver import SmartFileResolver
+            resolver = SmartFileResolver(self._index)
+            match = resolver.resolve(query)
+            if match:
+                # 返回文件信息而非正则搜索
+                file_info = next(
+                    (f for f in self._index.files if f.path == match), None
+                )
+                if file_info:
+                    return (
+                        f"基于 Workspace 索引找到匹配文件:\n"
+                        f"  路径: {file_info.path}\n"
+                        f"  模块: {file_info.module_name}\n"
+                        f"  大小: {file_info.size} bytes\n"
+                        f"请使用 read_file 读取该文件。"
+                    )
+
         ws = self.resolve_workspace(workspace_root)
         if not ws.exists():
             return self.error(f"workspace 不存在 — {workspace_root}")

@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.agent.react_agent import ReActAgent
@@ -18,6 +18,7 @@ from app.tools.run_tests import RunTestsTool
 from app.tools.registry import ToolRegistry
 from app.tools.search_code import SearchCodeTool
 from app.tools.write_file import WriteFileTool
+from app.workspace.indexer import IndexBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +67,10 @@ class ErrorResponse(BaseModel):
 # ── 工具构建 (每次请求新建，避免状态污染) ────────────────
 
 
-def _build_registry() -> ToolRegistry:
+def _build_registry(index=None) -> ToolRegistry:
     registry = ToolRegistry()
-    registry.register(ReadFileTool())
-    registry.register(SearchCodeTool())
+    registry.register(ReadFileTool(index=index))
+    registry.register(SearchCodeTool(index=index))
     registry.register(WriteFileTool())
     registry.register(GitDiffTool())
     registry.register(GitStatusTool())
@@ -79,16 +80,41 @@ def _build_registry() -> ToolRegistry:
 
 def _build_agent(workspace_root: Optional[str] = None) -> ReActAgent:
     llm = LLMClient(settings)
-    registry = _build_registry()
+    ws = workspace_root or str(settings.workspace_root)
+    # 构建 workspace 索引
+    try:
+        index = IndexBuilder().build(ws)
+    except Exception:
+        index = None
+    registry = _build_registry(index=index)
     return ReActAgent(
         llm=llm,
         registry=registry,
-        workspace_root=workspace_root or str(settings.workspace_root),
+        workspace_root=ws,
         max_tool_calls=settings.max_tool_calls,
     )
 
 
 # ── 路由 ──────────────────────────────────────────────
+
+
+@router.get("/workspace/index")
+async def get_workspace_index(
+    workspace_id: Optional[str] = Query(None, description="Workspace ID"),
+):
+    """返回 workspace 文件结构索引。"""
+    ws = _resolve_workspace_id(workspace_id)
+    builder = IndexBuilder()
+    index = builder.build(str(ws))
+    return {
+        "root": index.root,
+        "tree": index.tree,
+        "summary": index.summary,
+        "files": [
+            {"path": f.path, "module_name": f.module_name, "size": f.size}
+            for f in index.files
+        ],
+    }
 
 
 @router.post("/chat", response_model=ChatResponse, responses={500: {"model": ErrorResponse}})

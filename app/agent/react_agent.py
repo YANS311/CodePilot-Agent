@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
 from app.agent.prompts import SYSTEM_PROMPT
@@ -12,6 +12,8 @@ from app.security.tool_guardrail import ToolGuardrail
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.registry import ToolRegistry
+from app.workspace.indexer import IndexBuilder, WorkspaceIndex
+from app.workspace.resolver import SmartFileResolver
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,41 @@ _COMPLETION_PATTERNS = [
 ]
 
 MAX_TOOL_CALLS = 5
+
+
+def _format_tree(tree: dict, prefix: str = "") -> str:
+    """将 tree dict 格式化为可读的树形结构。
+
+    Tree 格式: {"files": [...], "dirs": {name: {"files": [...], "dirs": {...}}}}
+    """
+    lines = []
+
+    # 先列当前目录的文件
+    files = tree.get("files", [])
+    dirs = tree.get("dirs", {})
+    dir_items = list(dirs.items())
+
+    for j, fname in enumerate(files):
+        is_last = j == len(files) - 1 and not dir_items
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{fname}")
+
+    # 再列子目录
+    for k, (dir_name, sub_node) in enumerate(dir_items):
+        is_last = k == len(dir_items) - 1
+        connector = "└── " if is_last else "├── "
+        child_prefix = "    " if is_last else "│   "
+
+        sub_files = sub_node.get("files", [])
+        sub_dirs = sub_node.get("dirs", {})
+
+        lines.append(f"{prefix}{connector}{dir_name}/")
+        # 递归渲染子目录内容
+        sub_lines = _format_tree(sub_node, prefix + child_prefix)
+        if sub_lines:
+            lines.append(sub_lines)
+
+    return "\n".join(lines)
 
 
 @dataclass
@@ -78,6 +115,8 @@ class ReActAgent:
         self._has_completion_corrected = False
         self._budget = ToolBudget(max_calls=max_tool_calls)
         self._guardrail = ToolGuardrail()
+        self._index: Optional[WorkspaceIndex] = None
+        self._resolver: Optional[SmartFileResolver] = None
 
     async def run(self, task: str) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
@@ -89,8 +128,11 @@ class ReActAgent:
                 security_warnings=self._guardrail.warnings,
             )
 
+        # 构建 Workspace 索引并注入上下文
+        index_context = self._build_index_context()
+
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + index_context},
             {"role": "user", "content": task},
         ]
 
@@ -240,6 +282,44 @@ class ReActAgent:
             steps=steps,
             security_warnings=self._guardrail.warnings,
         )
+
+    def _build_index_context(self) -> str:
+        """构建 Workspace 索引上下文，注入到系统提示中。"""
+        try:
+            builder = IndexBuilder()
+            self._index = builder.build(self._workspace_root)
+            self._resolver = SmartFileResolver(self._index)
+        except Exception:
+            logger.warning("Failed to build workspace index")
+            return ""
+
+        if not self._index.files:
+            return ""
+
+        lines = ["当前 Workspace 结构:"]
+        lines.append(_format_tree(self._index.tree, prefix=""))
+
+        # 关键文件分组
+        py_files = [f.path for f in self._index.files if f.path.endswith(".py")]
+        other_files = [f.path for f in self._index.files if not f.path.endswith(".py")]
+
+        if py_files:
+            lines.append(f"\nPython 文件 ({len(py_files)}):")
+            for f in py_files[:20]:
+                lines.append(f"  - {f}")
+
+        if other_files:
+            lines.append(f"\n其他文件 ({len(other_files)}):")
+            for f in other_files[:10]:
+                lines.append(f"  - {f}")
+
+        # 模块索引
+        if self._index.files:
+            lines.append("\n模块索引:")
+            for f in self._index.files[:30]:
+                lines.append(f"  - {f.module_name}: {f.path}")
+
+        return "\n".join(lines)
 
     @staticmethod
     def _has_fake_tool_calls(text: str) -> bool:
