@@ -33,12 +33,17 @@ User: "Fix the subtract bug in calculator.py"
 | Hard       |     8 | **75%**   | Cross-file fixes, multiple bugs in one file |
 | **Total**  | **30**| **90%**   | |
 
-Key metrics:
-- **TSR (Task Success Rate)**: 90.0%
-- **Pass@1**: 90.0%
-- **Test Pass Rate**: 96.6%
-- **Avg Tool Calls per Task**: 8.4
-- **Avg Duration per Task**: ~55s
+### Advanced Metrics (D15+)
+
+| Metric | Value | Description |
+|--------|------:|-------------|
+| Task Success Rate | 90.0% | 任务是否最终通过 |
+| Test Pass Rate | 96.6% | 测试是否通过 |
+| Tool Call Validity | ~98% | 工具调用是否合法 |
+| Verification Completion | ~85% | 修改后是否执行 run_tests |
+| Code Change Validity | 93.3% | 是否实际调用 write_file |
+| Planning Efficiency | 6.9 | 成功任务平均工具调用次数 |
+| Security Block Rate | 100% | 攻击样例被正确拦截的比例 |
 
 See [docs/evaluation.md](docs/evaluation.md) for full breakdown.
 
@@ -64,10 +69,11 @@ See [docs/evaluation.md](docs/evaluation.md) for full breakdown.
 │  └──────────┴──────────┴──────────┴────┬─────┴─────────┘    │
 │                                        │                     │
 │                                        ▼                     │
-│                              ┌──────────────────┐            │
-│                              │ Execution Runner │            │
-│                              │ (Local / Docker) │            │
-│                              └──────────────────┘            │
+│  ┌──────────────────┐    ┌──────────────────────────────┐   │
+│  │ Execution Runner │    │     Language Detector         │   │
+│  │ (Local / Docker) │◀───│  PythonAdapter (full)        │   │
+│  └──────────────────┘    │  JavaAdapter / NodeAdapter    │   │
+│                          └──────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,6 +85,8 @@ See [docs/evaluation.md](docs/evaluation.md) for full breakdown.
 |---------|-------------|
 | **ReAct Agent** | Think-Act-Observe loop with OpenAI Function Calling |
 | **6 Tools** | `search_code` `read_file` `write_file` `run_tests` `git_diff` `git_status` |
+| **Language Adapter** | BaseLanguageAdapter ABC + PythonAdapter (full) / Java / Node (stubs), auto-detection |
+| **Advanced Metrics** | 7 metrics: TSR, Test Pass Rate, Tool Validity, Verification Rate, Code Change, Planning Efficiency, Security Block Rate |
 | **Prompt Guardrail** | Detects and corrects fake tool calls in model text output |
 | **Execution Sandbox** | Local subprocess or Docker `--read-only --network none` |
 | **Evaluation Framework** | 30 tasks, auto metrics, error taxonomy, markdown reports |
@@ -136,14 +144,15 @@ app/
 ├── agent/
 │   ├── react_agent.py       # ReAct loop + guardrail
 │   └── prompts.py           # System prompt
+├── language/                # Language Adapter (ABC + Python/Java/Node)
 ├── tools/                   # 6 tools + registry
 ├── execution/               # Local / Docker runners
-└── evaluation/              # Metrics, analyzer, taxonomy
+└── evaluation/              # Metrics (7 advanced), analyzer, taxonomy
 
 workspace/                   # Bug seed files + tests
 evaluation/tasks.json        # 30 eval tasks
 scripts/run_eval.py          # Eval CLI
-tests/                       # 147 unit tests
+tests/                       # 192+ unit tests
 docs/                        # Architecture & eval docs
 ```
 

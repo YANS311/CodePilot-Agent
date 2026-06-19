@@ -117,3 +117,25 @@ python scripts/run_eval.py --tasks fix-subtract
 # - reports/eval_report.json (machine-readable)
 # - reports/eval_report.md   (human-readable)
 ```
+
+## Language Adapter (D15)
+
+Architecture abstraction for multi-language support. BaseLanguageAdapter ABC with language-specific implementations.
+
+| Language | Detection | Test Execution | Status |
+|:---------|:----------|:---------------|:-------|
+| Python | `requirements.txt`, `pyproject.toml`, `*.py` | `pytest` (full) | **Production** |
+| Java | `pom.xml`, `build.gradle`, `*.java` | — | Stub |
+| Node | `package.json`, `*.js`, `*.ts` | — | Stub |
+
+**LanguageDetector** scans workspace and returns `primary_language`, `detected_languages`, and `confidence` (0.0–1.0).
+
+**RunTestsTool** (D15 upgraded) uses LanguageDetector to dispatch: Python → full pytest execution, others → "not supported yet" with test command suggestion.
+
+## Test Coverage
+
+| Test Suite | Tests | Coverage |
+|:-----------|------:|:---------|
+| `test_language_adapter.py` | 23 | Python/Java/Node detect, source files, dependency files, LanguageDetector |
+| `test_advanced_metrics.py` | 22 | 7 metrics: TSR, pass rate, tool validity, verification, code change, planning, security |
+| Other test files | 147+ | Agent, tools, security, evaluation, upload |
