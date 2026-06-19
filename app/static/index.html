@@ -78,6 +78,19 @@
             background: #2d2200; border: 1px solid #bb8009; border-radius: 6px;
             padding: 12px; font-size: 13px; color: #e3b341; margin-bottom: 16px;
         }
+        .security-card {
+            background: #2d1013; border: 1px solid #da3633; border-radius: 6px;
+            padding: 14px; margin-bottom: 16px; font-size: 13px;
+        }
+        .security-card-header {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+        }
+        .security-badge {
+            background: #da3633; color: #fff; padding: 2px 10px;
+            border-radius: 10px; font-size: 11px; font-weight: 600;
+        }
+        .security-type { color: #f85149; font-weight: 600; }
+        .security-reason { color: #c9d1d9; margin-top: 6px; line-height: 1.5; }
 
         /* Markdown answer box */
         .answer-box {
@@ -267,6 +280,8 @@
 
             <div id="results" style="display:none;">
                 <div id="warn-container"></div>
+
+                <div id="security-container"></div>
 
                 <div id="test-result-container"></div>
 
@@ -487,8 +502,10 @@
         const diffSection = document.getElementById('diff-section');
         const diffContent = document.getElementById('diff-content');
         const warnContainer = document.getElementById('warn-container');
+        const securityContainer = document.getElementById('security-container');
         const testContainer = document.getElementById('test-result-container');
         warnContainer.innerHTML = '';
+        securityContainer.innerHTML = '';
         testContainer.innerHTML = '';
 
         // 渲染步骤
@@ -511,6 +528,22 @@
             }
         } else {
             stepsList.innerHTML = '<div class="step-item">无工具调用（直接回答）</div>';
+        }
+
+        // 渲染 Security Warnings
+        if (data.security_warnings && data.security_warnings.length > 0) {
+            for (const w of data.security_warnings) {
+                const card = document.createElement('div');
+                card.className = 'security-card';
+                card.innerHTML = `
+                    <div class="security-card-header">
+                        <span class="security-badge">BLOCKED</span>
+                        <span class="security-type">${escapeHtml(w.risk_type || 'unknown')}</span>
+                    </div>
+                    <div class="security-reason">${escapeHtml(w.reason || '')}</div>
+                `;
+                securityContainer.appendChild(card);
+            }
         }
 
         // 渲染 Test Result Card

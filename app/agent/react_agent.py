@@ -8,6 +8,7 @@ from typing import Any
 
 from app.agent.budget import ToolBudget
 from app.agent.prompts import SYSTEM_PROMPT
+from app.security.tool_guardrail import ToolGuardrail
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.registry import ToolRegistry
@@ -49,6 +50,7 @@ class AgentRunResult:
     messages: list[dict[str, Any]] = field(default_factory=list)
     thoughts: list[str] = field(default_factory=list)
     steps: list[AgentStep] = field(default_factory=list)
+    security_warnings: list[dict] = field(default_factory=list)
 
 
 class ReActAgent:
@@ -75,9 +77,18 @@ class ReActAgent:
         self._has_drift_corrected = False
         self._has_completion_corrected = False
         self._budget = ToolBudget(max_calls=max_tool_calls)
+        self._guardrail = ToolGuardrail()
 
     async def run(self, task: str) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
+        # Prompt Injection 检查
+        prompt_result = self._guardrail.check_prompt(task)
+        if not prompt_result.allow:
+            return AgentRunResult(
+                answer=f"安全拦截: {prompt_result.reason}",
+                security_warnings=self._guardrail.warnings,
+            )
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": task},
@@ -145,6 +156,7 @@ class ReActAgent:
                     messages=messages,
                     thoughts=thoughts,
                     steps=steps,
+                    security_warnings=self._guardrail.warnings,
                 )
 
             # 有 tool_calls：提取 thought 并构建 assistant 消息
@@ -188,7 +200,7 @@ class ReActAgent:
                     id=tc_info.id, name=tc_info.name, arguments=tc_info.arguments
                 )
                 result = await self._registry.execute(
-                    tool_call, self._workspace_root
+                    tool_call, self._workspace_root, guardrail=self._guardrail
                 )
                 tool_results.append(result)
 
@@ -226,6 +238,7 @@ class ReActAgent:
             messages=messages,
             thoughts=thoughts,
             steps=steps,
+            security_warnings=self._guardrail.warnings,
         )
 
     @staticmethod

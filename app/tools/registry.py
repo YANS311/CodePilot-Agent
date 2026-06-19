@@ -6,6 +6,7 @@ from typing import Any
 
 from app.models.tool import ToolCall, ToolResult
 from app.tools.base import BaseTool
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +84,29 @@ class ToolRegistry:
         return [t.to_openai_schema() for t in self._tools.values()]
 
     async def execute(
-        self, tool_call: ToolCall, workspace_root: str
+        self, tool_call: ToolCall, workspace_root: str,
+        guardrail=None,
     ) -> ToolResult:
         """按名称执行工具，返回结构化 ToolResult。
 
         工具不存在或执行异常时返回 success=False 的 ToolResult。
         """
+        # Security Guardrail 检查
+        if guardrail is not None:
+            from app.security.tool_guardrail import ToolGuardrail
+            if isinstance(guardrail, ToolGuardrail):
+                result = guardrail.check_tool_call(
+                    tool_call.name, tool_call.arguments, workspace_root
+                )
+                if not result.allow:
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        name=tool_call.name,
+                        success=False,
+                        output=f"SECURITY_BLOCKED: {result.reason}",
+                        metadata={"security_blocked": True, "risk_type": result.risk_type.value if result.risk_type else None},
+                    )
+
         tool = self.get(tool_call.name)
         if tool is None:
             return ToolResult(

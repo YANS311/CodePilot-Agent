@@ -56,6 +56,7 @@ class ChatResponse(BaseModel):
     messages: list[dict[str, Any]]
     thoughts: list[str] = Field(default_factory=list)
     steps: list[AgentStepItem] = Field(default_factory=list)
+    security_warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):
@@ -123,6 +124,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 )
                 for s in result.steps
             ],
+            security_warnings=result.security_warnings,
         )
     except Exception as exc:
         logger.exception("Chat request failed")
