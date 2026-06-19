@@ -1,8 +1,8 @@
-"""RunTestsTool — 执行 workspace 内的 pytest 测试。
+"""RunTestsTool — 执行 workspace 内的测试。
 
-通过 RunnerFactory 获取 ExecutionRunner，
-Tool 只负责业务逻辑（参数校验、结果格式化），
-Runner 负责执行环境（本地进程 / Docker 容器）。
+通过 LanguageAdapter 获取测试命令，
+通过 RunnerFactory 获取 ExecutionRunner 执行。
+当前只有 Python Adapter 完整支持测试执行。
 """
 
 from __future__ import annotations
@@ -10,14 +10,15 @@ from __future__ import annotations
 import json
 
 from app.execution.factory import RunnerFactory
+from app.language.detector import LanguageDetector
 from app.tools.workspace_tool import WorkspaceTool
 
 
 class RunTestsTool(WorkspaceTool):
-    """执行 workspace 内的 pytest 测试 — 继承 WorkspaceTool。"""
+    """执行 workspace 内的测试 — 继承 WorkspaceTool，支持多语言适配。"""
 
     name = "run_tests"
-    description = "执行 workspace 内的 pytest 测试。可选指定测试目标文件。"
+    description = "执行 workspace 内的测试。可选指定测试目标文件。支持自动语言检测。"
     parameters = {
         "type": "object",
         "properties": {
@@ -30,31 +31,50 @@ class RunTestsTool(WorkspaceTool):
     }
 
     def __init__(self, *, mode: str | None = None) -> None:
-        """初始化 RunTestsTool。
-
-        Args:
-            mode: 执行模式。为 None 时使用配置中的 EXECUTION_MODE。
-        """
         self._mode = mode
+        self._detector = LanguageDetector()
 
     async def run(self, *, workspace_root: str, target: str = "", **_) -> str:
         ws = self.resolve_workspace(workspace_root)
         if not ws.exists():
             return self.error(f"workspace 不存在 — {workspace_root}")
 
-        # 通过 Factory 获取 Runner — 体现工厂模式
+        # 检测语言
+        detection = self._detector.detect(str(ws))
+        primary_lang = detection["primary_language"]
+
+        if not primary_lang:
+            return self.error("无法检测 workspace 中的编程语言")
+
+        adapter = self._detector.get_adapter(primary_lang)
+        if adapter is None:
+            return self.error(f"不支持的语言: {primary_lang}")
+
+        # Python — 完整支持
+        if primary_lang == "python":
+            return await self._run_python(ws, target)
+
+        # 其他语言 — 返回提示
+        return json.dumps({
+            "success": False,
+            "language_detected": primary_lang,
+            "message": f"语言 {primary_lang} 已检测到，但测试执行暂不支持",
+            "test_command": adapter.get_test_command(target or None),
+            "detected_languages": detection["detected_languages"],
+        }, ensure_ascii=False)
+
+    async def _run_python(self, ws, target: str) -> str:
+        """Python 测试执行 — 完整支持。"""
         from app.core.config import settings
 
         mode = self._mode or settings.execution_mode
         runner = RunnerFactory.create(mode)
 
-        # Runner 负责执行，Tool 只负责结果格式化
         result = await runner.run_pytest(
             workspace_path=str(ws),
             target=target or None,
         )
 
-        # 如果 Runner 返回错误（非执行结果），直接返回错误字符串
         if result.error:
             return self.error(result.error)
 

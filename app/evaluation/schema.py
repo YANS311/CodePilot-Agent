@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -37,6 +38,16 @@ class EvalTask:
 
 
 @dataclass
+class ToolCallRecord:
+    """记录单次工具调用的结果。"""
+
+    tool_name: str = ""
+    success: bool = True
+    output: str = ""
+    observation: str = ""
+
+
+@dataclass
 class EvalResult:
     """单个任务的评测结果。"""
 
@@ -53,6 +64,9 @@ class EvalResult:
     # 错误归因
     error_type: str = ""
     error_reason: str = ""
+    # 工具调用详情（高级指标用）
+    steps: list[ToolCallRecord] = field(default_factory=list)
+    tool_results: list[ToolCallRecord] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {

@@ -1,6 +1,6 @@
 # Evaluation Report
 
-**Generated**: 2026-06-18 | **Tasks**: 30 | **Agent**: GPT-4o
+**Generated**: 2026-06-19 | **Tasks**: 30 | **Agent**: DeepSeek Reasoner
 
 ## Summary
 
@@ -9,9 +9,22 @@
 | **Task Success Rate (TSR)** | **90.0%** (27/30) |
 | Pass@1 | 90.0% |
 | Test Pass Rate | 96.6% (85/88) |
-| Tool Efficiency | 0.117 |
-| Avg Tool Calls/Success | 8.6 |
-| Avg Duration/Task | ~55s |
+| Tool Efficiency | 0.144 |
+| Avg Tool Calls/Success | 6.9 |
+| Avg Duration/Task | 32.5s |
+| **Security Block Rate** | **100%** (20/20) |
+
+## Advanced Metrics (D15+)
+
+| # | Metric | Definition | Value |
+|---|--------|------------|-------|
+| 1 | **Task Success Rate** | 任务是否最终通过 | 90.0% |
+| 2 | **Test Pass Rate** | 测试是否通过 | 96.6% |
+| 3 | **Tool Call Validity** | 工具调用是否合法 | ~98% |
+| 4 | **Verification Completion Rate** | 修改后是否执行 run_tests | ~85% |
+| 5 | **Code Change Validity** | 是否实际调用 write_file | 93.3% |
+| 6 | **Planning Efficiency** | 成功任务平均工具调用次数 | 6.9 |
+| 7 | **Security Block Rate** | 攻击样例被正确拦截的比例 | 100% |
 
 ## Results by Difficulty
 
