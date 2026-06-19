@@ -251,6 +251,10 @@
     <h1>CodePilot Agent</h1>
     <p class="subtitle">Python Coding Agent &mdash; 输入任务，Agent 自动搜索、读取、修改代码</p>
 
+    <div id="workspace-banner" style="display:none;background:#161b22;border:1px solid #238636;border-radius:6px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#3fb950;">
+        当前 Workspace: <code id="workspace-id-display"></code>
+    </div>
+
     <div class="layout">
         <!-- 左侧：主内容 -->
         <div class="main-col">
@@ -292,6 +296,13 @@
                     <span class="ws-title">Workspace 文件</span>
                     <button class="ws-refresh" onclick="refreshFileList()">刷新</button>
                 </div>
+                <div style="margin-bottom:12px;">
+                    <label for="upload-input" class="ws-refresh" style="display:inline-block;cursor:pointer;text-align:center;">
+                        上传项目
+                    </label>
+                    <input id="upload-input" type="file" accept=".zip,.py,.txt,.md,.json" style="display:none;" onchange="handleUpload(this)">
+                    <div id="upload-status" style="font-size:12px;color:#8b949e;margin-top:6px;"></div>
+                </div>
                 <div id="ws-file-list" class="ws-file-list">
                     <div style="color:#484f58;font-size:13px;">加载中...</div>
                 </div>
@@ -322,11 +333,14 @@
 
     // ── Workspace 文件管理 ──
     let lastKnownFiles = new Set();
+    let currentWorkspaceId = null;
 
     async function refreshFileList() {
         const listEl = document.getElementById('ws-file-list');
         try {
-            const resp = await fetch('/api/files');
+            let url = '/api/files';
+            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(url);
             if (!resp.ok) throw new Error('加载失败');
             const data = await resp.json();
             renderFileList(data.files);
@@ -389,11 +403,15 @@
         filenameEl.textContent = filePath;
         contentEl.textContent = '加载中...';
         truncatedEl.style.display = 'none';
-        downloadEl.href = '/api/files/download?path=' + encodeURIComponent(filePath);
+        let downloadUrl = '/api/files/download?path=' + encodeURIComponent(filePath);
+        if (currentWorkspaceId) downloadUrl += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
+        downloadEl.href = downloadUrl;
         modal.classList.add('active');
 
         try {
-            const resp = await fetch('/api/files/content?path=' + encodeURIComponent(filePath));
+            let contentUrl = '/api/files/content?path=' + encodeURIComponent(filePath);
+            if (currentWorkspaceId) contentUrl += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(contentUrl);
             if (!resp.ok) {
                 const err = await resp.json();
                 contentEl.textContent = '错误: ' + (err.detail || '加载失败');
@@ -412,7 +430,9 @@
     }
 
     function downloadFile(filePath) {
-        window.open('/api/files/download?path=' + encodeURIComponent(filePath), '_blank');
+        let url = '/api/files/download?path=' + encodeURIComponent(filePath);
+        if (currentWorkspaceId) url += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
+        window.open(url, '_blank');
     }
 
     // ── Agent 任务 ──
@@ -436,7 +456,7 @@
             const resp = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task }),
+                body: JSON.stringify({ task, workspace_id: currentWorkspaceId }),
             });
             if (!resp.ok) {
                 const err = await resp.json();
@@ -575,6 +595,49 @@
     document.getElementById('preview-modal').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closePreview();
     });
+
+    // ── 文件上传 ──
+
+    async function handleUpload(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const statusEl = document.getElementById('upload-status');
+        statusEl.textContent = '上传中...';
+        statusEl.style.color = '#8b949e';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.detail || '上传失败');
+            }
+            const data = await resp.json();
+
+            // 设置当前 workspace
+            currentWorkspaceId = data.workspace_id;
+            document.getElementById('workspace-id-display').textContent = data.workspace_id;
+            document.getElementById('workspace-banner').style.display = 'block';
+
+            statusEl.textContent = `上传成功: ${data.file_count} 个文件`;
+            statusEl.style.color = '#3fb950';
+
+            // 刷新文件列表
+            refreshFileList();
+        } catch (e) {
+            statusEl.textContent = '错误: ' + e.message;
+            statusEl.style.color = '#da3633';
+        }
+
+        // 清空 input 以便重复上传同一文件
+        input.value = '';
+    }
 
     // 页面加载时获取文件列表
     refreshFileList();

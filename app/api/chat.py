@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.agent.react_agent import ReActAgent
 from app.core.config import settings
+from app.api.upload import _resolve_workspace_id
 from app.core.llm_client import LLMClient
 from app.tools.git_diff import GitDiffTool
 from app.tools.git_status import GitStatusTool
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 class ChatRequest(BaseModel):
     task: str = Field(..., min_length=1, description="用户任务描述")
+    workspace_id: Optional[str] = Field(None, description="指定 workspace ID")
 
 
 class ToolResultItem(BaseModel):
@@ -74,13 +76,13 @@ def _build_registry() -> ToolRegistry:
     return registry
 
 
-def _build_agent() -> ReActAgent:
+def _build_agent(workspace_root: Optional[str] = None) -> ReActAgent:
     llm = LLMClient(settings)
     registry = _build_registry()
     return ReActAgent(
         llm=llm,
         registry=registry,
-        workspace_root=str(settings.workspace_root),
+        workspace_root=workspace_root or str(settings.workspace_root),
         max_tool_calls=settings.max_tool_calls,
     )
 
@@ -92,7 +94,8 @@ def _build_agent() -> ReActAgent:
 async def chat(req: ChatRequest) -> ChatResponse:
     """执行编码任务，返回完整结果。"""
     try:
-        agent = _build_agent()
+        ws = str(_resolve_workspace_id(req.workspace_id))
+        agent = _build_agent(workspace_root=ws)
         result = await agent.run(req.task)
         return ChatResponse(
             answer=result.answer,
@@ -136,7 +139,8 @@ async def chat_stream(req: ChatRequest):
         yield _sse_event("start", {"task": req.task})
 
         try:
-            agent = _build_agent()
+            ws = str(_resolve_workspace_id(req.workspace_id))
+            agent = _build_agent(workspace_root=ws)
             result = await agent.run(req.task)
 
             # 逐个发送 tool_results

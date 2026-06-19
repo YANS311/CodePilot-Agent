@@ -8,6 +8,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 from app.api.chat import router as chat_router
 from app.api.files import router as files_router
+from app.api.upload import router as upload_router
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ async def _log_config():
 # ── 路由 ──
 app.include_router(chat_router)
 app.include_router(files_router)
+app.include_router(upload_router)
 
 
 @app.get("/health")
