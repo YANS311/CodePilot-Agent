@@ -19,6 +19,7 @@ from app.tools.registry import ToolRegistry
 from app.tools.search_code import SearchCodeTool
 from app.tools.write_file import WriteFileTool
 from app.workspace.indexer import IndexBuilder
+from app.demo.scenarios import get_demo, list_demos
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,23 @@ class ChatResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str
+
+
+class DemoRequest(BaseModel):
+    demo_id: str = Field(..., description="Demo 场景 ID")
+    workspace_id: Optional[str] = Field(None, description="Workspace ID")
+
+
+class DemoResponse(BaseModel):
+    id: str
+    name: str
+    category: str
+    task: str
+    description: str
+
+
+class DemoListResponse(BaseModel):
+    demos: list[DemoResponse]
 
 
 # ── 工具构建 (每次请求新建，避免状态污染) ────────────────
@@ -115,6 +133,36 @@ async def get_workspace_index(
             for f in index.files
         ],
     }
+
+
+@router.get("/demos", response_model=DemoListResponse)
+async def get_demos():
+    """列出所有 Demo 场景。"""
+    demos = list_demos()
+    return DemoListResponse(
+        demos=[
+            DemoResponse(
+                id=d.id, name=d.name, category=d.category,
+                task=d.task, description=d.description,
+            )
+            for d in demos
+        ]
+    )
+
+
+@router.post("/demo", response_model=DemoResponse)
+async def run_demo(req: DemoRequest):
+    """获取 Demo 场景信息（前端用 task 填充输入框）。"""
+    scenario = get_demo(req.demo_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail=f"Demo not found: {req.demo_id}")
+    return DemoResponse(
+        id=scenario.id,
+        name=scenario.name,
+        category=scenario.category,
+        task=scenario.task,
+        description=scenario.description,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse, responses={500: {"model": ErrorResponse}})

@@ -282,6 +282,24 @@
             .layout { flex-direction: column; }
             .side-col { width: 100%; }
         }
+
+        /* ── Demo 按钮 ── */
+        .demo-bar {
+            display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .demo-btn {
+            padding: 8px 16px; background: #161b22; border: 1px solid #30363d;
+            border-radius: 6px; color: #8b949e; font-size: 13px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .demo-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .demo-btn.bug-fix:hover { border-color: #3fb950; color: #3fb950; }
+        .demo-btn.repo:hover { border-color: #a371f7; color: #a371f7; }
+        .demo-btn.security:hover { border-color: #f85149; color: #f85149; }
+        .demo-label {
+            font-size: 11px; color: #484f58; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 4px;
+        }
     </style>
 </head>
 <body>
@@ -295,6 +313,12 @@
     <div class="layout">
         <!-- 左侧：主内容 -->
         <div class="main-col">
+            <div class="demo-bar">
+                <span class="demo-label">Quick Demo:</span>
+                <button class="demo-btn bug-fix" onclick="runDemo('demo-bug-fix')">Bug Fix</button>
+                <button class="demo-btn repo" onclick="runDemo('demo-repo-analysis')">Repo Analysis</button>
+                <button class="demo-btn security" onclick="runDemo('demo-security')">Security</button>
+            </div>
             <div class="input-area">
                 <textarea id="task-input" placeholder="例如：把 buggy_calculator.py 里的 subtract 函数改正确" rows="2"></textarea>
                 <button id="submit-btn" onclick="submitTask()">运行</button>
@@ -445,6 +469,29 @@
 
             container.appendChild(dirItem);
             container.appendChild(childContainer);
+        }
+    }
+
+    // ── Demo 功能 ──
+    async function runDemo(demoId) {
+        const input = document.getElementById('task-input');
+        try {
+            const resp = await fetch('/api/demo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ demo_id: demoId, workspace_id: currentWorkspaceId }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.detail || '加载 Demo 失败');
+            }
+            const data = await resp.json();
+            input.value = data.task;
+            input.focus();
+            // 自动提交
+            submitTask();
+        } catch (e) {
+            alert('Demo 错误: ' + e.message);
         }
     }
 

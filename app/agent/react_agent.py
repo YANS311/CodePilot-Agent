@@ -17,6 +17,25 @@ from app.workspace.resolver import SmartFileResolver
 
 logger = logging.getLogger(__name__)
 
+# ── REPO_MODE 关键词 ──────────────────────────────────────
+_REPO_MODE_KEYWORDS = [
+    "项目做什么", "做什么的", "整体架构", "系统架构",
+    "系统流程", "执行流程", "怎么运行", "如何运行",
+    "项目结构", "代码结构", "模块职责", "分析项目",
+    "项目概览", "代码分析", "架构分析",
+    "repo", "architecture", "overview", "analyze project",
+]
+
+
+def _detect_mode(task: str) -> str:
+    """检测用户意图，返回 'repo' 或 'react'。"""
+    task_lower = task.lower()
+    for kw in _REPO_MODE_KEYWORDS:
+        if kw in task_lower:
+            return "repo"
+    return "react"
+
+
 # 检测文本中伪造的工具调用
 _TOOL_DRIFT_PATTERNS = [
     re.compile(r"write_file\s*\(", re.IGNORECASE),
@@ -127,6 +146,11 @@ class ReActAgent:
                 answer=f"安全拦截: {prompt_result.reason}",
                 security_warnings=self._guardrail.warnings,
             )
+
+        # 模式检测：REPO_MODE vs REACT_MODE
+        mode = _detect_mode(task)
+        if mode == "repo":
+            return await self._run_repo_mode(task)
 
         # 构建 Workspace 索引并注入上下文
         index_context = self._build_index_context()
@@ -282,6 +306,71 @@ class ReActAgent:
             steps=steps,
             security_warnings=self._guardrail.warnings,
         )
+
+    async def _run_repo_mode(self, task: str) -> AgentRunResult:
+        """REPO_MODE：分析整个项目结构。"""
+        from app.agent.repo_analyzer import RepoAnalyzer
+
+        # 确保 index 已构建
+        if not self._index:
+            self._build_index_context()
+
+        if not self._index or not self._index.files:
+            return AgentRunResult(
+                answer="当前 workspace 为空，无法进行项目分析。请先上传代码项目。",
+                thoughts=["REPO_MODE: workspace 为空"],
+            )
+
+        analyzer = RepoAnalyzer(llm=self._llm, index=self._index)
+        analysis = await analyzer.analyze()
+
+        # 格式化输出
+        answer = self._format_analysis(analysis, task)
+
+        return AgentRunResult(
+            answer=answer,
+            tool_calls_count=0,
+            tool_results=[],
+            messages=[],
+            thoughts=[f"REPO_MODE: 分析项目结构 ({len(self._index.files)} files)"],
+            steps=[],
+        )
+
+    def _format_analysis(self, analysis, task: str) -> str:
+        """格式化 RepoAnalysis 为用户可读的 Markdown。"""
+        parts = []
+
+        if analysis.project_type:
+            parts.append(f"## Project Overview\n**{analysis.project_type}**: {analysis.architecture_summary}")
+        elif analysis.architecture_summary:
+            parts.append(f"## Project Overview\n{analysis.architecture_summary}")
+
+        if analysis.execution_flow:
+            parts.append("## Architecture Flow")
+            for line in analysis.execution_flow:
+                parts.append(line)
+
+        if analysis.core_modules:
+            parts.append("## Core Modules")
+            parts.append("| Module | Path | Role |")
+            parts.append("|--------|------|------|")
+            for m in analysis.core_modules:
+                parts.append(f"| {m.get('name', '')} | {m.get('path', '')} | {m.get('role', '')} |")
+
+        if analysis.potential_bottlenecks:
+            parts.append("## Potential Issues")
+            for issue in analysis.potential_bottlenecks:
+                parts.append(f"- {issue}")
+
+        if analysis.suggested_improvements:
+            parts.append("## Suggested Improvements")
+            for imp in analysis.suggested_improvements:
+                parts.append(f"- {imp}")
+
+        if not parts:
+            return analysis.raw_output or "无法生成项目分析报告。"
+
+        return "\n\n".join(parts)
 
     def _build_index_context(self) -> str:
         """构建 Workspace 索引上下文，注入到系统提示中。"""
