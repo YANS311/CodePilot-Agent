@@ -24,6 +24,9 @@ htmlcov/
 workspace_eval/
 reports/eval_report.json
 
+# User uploads
+workspace/uploads/
+
 # Project docs (local only)
 PROJECT_SUMMARY.md
 
