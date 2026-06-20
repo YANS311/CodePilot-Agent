@@ -107,6 +107,9 @@ class AgentRunResult:
     thoughts: list[str] = field(default_factory=list)
     steps: list[AgentStep] = field(default_factory=list)
     security_warnings: list[dict] = field(default_factory=list)
+    # D18: evidence-based fields
+    evidence: list[dict] = field(default_factory=list)
+    confidence: float = 0.0
 
 
 class ReActAgent:
@@ -327,6 +330,24 @@ class ReActAgent:
         # 格式化输出
         answer = self._format_analysis(analysis, task)
 
+        # 构建 evidence 列表（转为 dict 以便 JSON 序列化）
+        evidence_data = []
+        for claim in analysis.claims:
+            evidence_data.append({
+                "claim_text": claim.claim_text,
+                "evidence": [
+                    {
+                        "claim_type": ev.claim_type,
+                        "file": ev.file,
+                        "symbol": ev.symbol,
+                        "line_start": ev.line_start,
+                        "line_end": ev.line_end,
+                        "excerpt": ev.excerpt,
+                    }
+                    for ev in claim.evidence
+                ],
+            })
+
         return AgentRunResult(
             answer=answer,
             tool_calls_count=0,
@@ -334,6 +355,8 @@ class ReActAgent:
             messages=[],
             thoughts=[f"REPO_MODE: 分析项目结构 ({len(self._index.files)} files)"],
             steps=[],
+            evidence=evidence_data,
+            confidence=analysis.confidence,
         )
 
     def _format_analysis(self, analysis, task: str) -> str:

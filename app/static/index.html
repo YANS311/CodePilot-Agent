@@ -300,6 +300,31 @@
             font-size: 11px; color: #484f58; text-transform: uppercase;
             letter-spacing: 0.5px; margin-bottom: 4px;
         }
+
+        /* ── Evidence Section ── */
+        .evidence-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin-bottom: 10px; font-size: 13px;
+        }
+        .evidence-claim {
+            color: #f0f6fc; font-weight: 600; margin-bottom: 8px;
+            padding-left: 12px; border-left: 3px solid #58a6ff;
+        }
+        .evidence-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 4px 0 4px 20px; color: #8b949e; font-size: 12px;
+        }
+        .evidence-file { color: #58a6ff; cursor: pointer; }
+        .evidence-file:hover { text-decoration: underline; }
+        .evidence-symbol { color: #d2a8ff; font-family: monospace; }
+        .evidence-lines { color: #484f58; }
+        .confidence-badge {
+            display: inline-block; padding: 2px 10px; border-radius: 10px;
+            font-size: 12px; font-weight: 600;
+        }
+        .confidence-high { background: #238636; color: #fff; }
+        .confidence-mid { background: #bb8009; color: #fff; }
+        .confidence-low { background: #da3633; color: #fff; }
     </style>
 </head>
 <body>
@@ -332,6 +357,12 @@
                 <div id="security-container"></div>
 
                 <div id="test-result-container"></div>
+
+                <div class="section" id="evidence-section" style="display:none;">
+                    <div class="section-title">Evidence & Confidence</div>
+                    <div id="evidence-confidence" style="margin-bottom:12px;"></div>
+                    <div id="evidence-list"></div>
+                </div>
 
                 <div class="section" id="steps-section">
                     <div class="section-title">执行步骤 (Thought → Action → Observation)</div>
@@ -653,9 +684,13 @@
         const warnContainer = document.getElementById('warn-container');
         const securityContainer = document.getElementById('security-container');
         const testContainer = document.getElementById('test-result-container');
+        const evidenceSection = document.getElementById('evidence-section');
+        const evidenceConf = document.getElementById('evidence-confidence');
+        const evidenceList = document.getElementById('evidence-list');
         warnContainer.innerHTML = '';
         securityContainer.innerHTML = '';
         testContainer.innerHTML = '';
+        evidenceSection.style.display = 'none';
 
         // 渲染步骤
         stepsList.innerHTML = '';
@@ -693,6 +728,34 @@
                 `;
                 securityContainer.appendChild(card);
             }
+        }
+
+        // 渲染 Evidence & Confidence (D18)
+        if (data.evidence && data.evidence.length > 0) {
+            evidenceSection.style.display = 'block';
+            // Confidence badge
+            const conf = data.confidence || 0;
+            const confPct = (conf * 100).toFixed(0);
+            const confClass = conf >= 0.7 ? 'high' : conf >= 0.4 ? 'mid' : 'low';
+            evidenceConf.innerHTML = `Confidence: <span class="confidence-badge confidence-${confClass}">${confPct}%</span>`;
+            // Claims with evidence
+            evidenceList.innerHTML = '';
+            for (const claim of data.evidence) {
+                const card = document.createElement('div');
+                card.className = 'evidence-card';
+                let html = `<div class="evidence-claim">${escapeHtml(claim.claim_text)}</div>`;
+                for (const ev of (claim.evidence || [])) {
+                    html += `<div class="evidence-item">
+                        <span class="evidence-file" onclick="previewFile('${escapeJs(ev.file)}')">${escapeHtml(ev.file)}</span>
+                        <span class="evidence-symbol">${escapeHtml(ev.symbol)}()</span>
+                        <span class="evidence-lines">L${ev.line_start}-L${ev.line_end}</span>
+                    </div>`;
+                }
+                card.innerHTML = html;
+                evidenceList.appendChild(card);
+            }
+        } else {
+            evidenceSection.style.display = 'none';
         }
 
         // 渲染 Test Result Card
