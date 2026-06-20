@@ -34,7 +34,15 @@ app.include_router(upload_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """健康检查 — 用于 Docker 启动验证和监控。"""
+    ws = settings.workspace_root
+    workspace_mounted = ws.exists() and ws.is_dir()
+    return {
+        "status": "ok",
+        "agent": "ready",
+        "workspace": "mounted" if workspace_mounted else "not_found",
+        "llm_model": settings.llm_model,
+    }
 
 
 # ── 静态文件 (放在最后，避免覆盖 API 路由) ──
@@ -47,3 +55,4 @@ if _STATIC_DIR.exists():
 async def index():
     from starlette.responses import FileResponse
     return FileResponse(str(_STATIC_DIR / "index.html"))
+

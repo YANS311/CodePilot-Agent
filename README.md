@@ -4,6 +4,25 @@
 
 A full-stack Agent platform that autonomously fixes bugs, analyzes codebases, and provides evidence-backed explanations — built from scratch with ReAct loop, evaluation framework, security guardrails, and explainability layer.
 
+## 1-Command Run
+
+```bash
+# Clone and start
+git clone https://github.com/YANS311/CodePilot-Agent.git
+cd CodePilot-Agent
+cp .env.example .env    # Add your API key
+docker-compose up
+# Open http://localhost:8000
+```
+
+## Live Demo Flow
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Click **Bug Fix** | Agent auto-locates → reads → fixes → tests → verifies |
+| 2 | Click **Repo Analysis** | AST evidence extraction → structured report → confidence 85% |
+| 3 | Click **Security** | Prompt injection detected → blocked by guardrails |
+
 ## Tech Stack
 
 | Category | Technology |
@@ -135,10 +154,17 @@ Confidence: 85%
 ## Quick Start
 
 ```bash
+# Option 1: Docker (recommended)
+docker-compose up
+# Open http://localhost:8000
+
+# Option 2: Local
 pip install -r requirements.txt
 cp .env.example .env    # Add your API key
 uvicorn app.main:app --reload
-curl http://localhost:8000/health  # {"status":"ok"}
+
+# Run all 3 demos from CLI
+python scripts/demo_runner.py
 ```
 
 ## Run Tests
@@ -156,6 +182,7 @@ pytest tests/ -v    # 337 unit tests
 - [Architecture Overview](docs/architecture_overview.md) — Complete system diagram
 - [3-Minute Interview Script](docs/interview_3min.md) — 面试讲解稿
 - [Final Demo Script](docs/demo_script_final.md) — 可复现的演示流程
+- [Demo Recording Guide](docs/demo_guide.md) — 录屏步骤和推荐工具
 - [Demo Flows](docs/demo_flows.md) — Standardized demo scenarios
 - [Evaluation](docs/evaluation.md) — Full metrics breakdown
 - [Error Taxonomy](docs/error-taxonomy.md) — 7 error types

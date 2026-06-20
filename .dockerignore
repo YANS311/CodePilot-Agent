@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.git
+.pytest_cache
+.venv
+node_modules
+.idea
+reports/
+tests/
+docs/
+*.md
+.env
+.env.example
+PROJECT_SUMMARY.md
