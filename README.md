@@ -1,8 +1,20 @@
 # CodePilot Agent
 
-> A Python Coding Agent that thinks, acts, verifies, and explains — built from scratch.
+> **CodePilot is a Python-based AI Coding Agent system built with FastAPI and LLM tool-calling architecture.**
 
-CodePilot autonomously fixes bugs in Python codebases. It searches code, reads files, writes fixes, runs tests, and outputs evidence-backed analysis reports.
+A full-stack Agent platform that autonomously fixes bugs, analyzes codebases, and provides evidence-backed explanations — built from scratch with ReAct loop, evaluation framework, security guardrails, and explainability layer.
+
+## Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| **Language** | Python 3.9+ |
+| **Backend** | FastAPI + Pydantic Settings |
+| **LLM** | OpenAI / DeepSeek compatible API (Tool Calling / Function Calling) |
+| **Execution** | Local subprocess / Docker sandbox (`--read-only --network none`) |
+| **Repo Indexing** | RAG-like Workspace Intelligence (file tree + AST summaries) |
+| **Eval** | Custom 30-task benchmark with 7 advanced metrics |
+| **Security** | Prompt injection detection + tool guardrail |
 
 ## Architecture
 
@@ -35,6 +47,25 @@ CodePilot autonomously fixes bugs in Python codebases. It searches code, reads f
    │TSR 90%   │   │100% block│   │Confidence│
    └──────────┘   └──────────┘   └──────────┘
 ```
+
+## Project Description
+
+### Layer 1 — Resume Screening
+
+> Python + FastAPI 后端服务 | 基于 LLM 的 Agent 系统 | 支持代码修复 / 文件操作 / 自动测试
+
+- Python backend service built with FastAPI
+- LLM-powered Agent system with Tool Calling architecture
+- Automated code fix, file operations, and test execution
+
+### Layer 2 — Technical Capability
+
+> ReAct Agent Loop | Tool Registry | Evaluation System | Security Guardrails | Evidence-based Repo Analysis
+
+- **ReAct Agent**: Think → Act → Observe loop with 6 tools and Mode Router
+- **Evaluation**: 30-task benchmark, 7 advanced metrics, automatic error taxonomy. **TSR: 90%**
+- **Security**: Prompt injection detection, tool guardrail, completion chain validation. **Block Rate: 100%**
+- **Explainability**: AST-based evidence extraction with confidence scoring (0.0~1.0)
 
 ## Features
 
@@ -116,17 +147,18 @@ curl http://localhost:8000/health  # {"status":"ok"}
 pytest tests/ -v    # 337 unit tests
 ```
 
+## Keywords for Recruitment
+
+> **Python / FastAPI / LLM / Agent / RAG / Docker / Tool Calling / Function Calling / Evaluation / Security / ReAct / Prompt Engineering**
+
 ## Docs
 
 - [Architecture Overview](docs/architecture_overview.md) — Complete system diagram
 - [3-Minute Interview Script](docs/interview_3min.md) — 面试讲解稿
+- [Final Demo Script](docs/demo_script_final.md) — 可复现的演示流程
 - [Demo Flows](docs/demo_flows.md) — Standardized demo scenarios
 - [Evaluation](docs/evaluation.md) — Full metrics breakdown
 - [Error Taxonomy](docs/error-taxonomy.md) — 7 error types
-
-## Tech Stack
-
-Python 3.9+ | FastAPI | Pydantic | OpenAI Compatible API | Docker (optional)
 
 ## License
 
