@@ -180,10 +180,6 @@ pytest tests/ -v    # 337 unit tests
 ## Docs
 
 - [Architecture Overview](docs/architecture_overview.md) — Complete system diagram
-- [3-Minute Interview Script](docs/interview_3min.md) — 面试讲解稿
-- [Final Demo Script](docs/demo_script_final.md) — 可复现的演示流程
-- [Demo Recording Guide](docs/demo_guide.md) — 录屏步骤和推荐工具
-- [Demo Flows](docs/demo_flows.md) — Standardized demo scenarios
 - [Evaluation](docs/evaluation.md) — Full metrics breakdown
 - [Error Taxonomy](docs/error-taxonomy.md) — 7 error types
 
