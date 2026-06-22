@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
 from app.agent.prompts import SYSTEM_PROMPT
+from app.memory.memory_manager import get_memory_manager
 from app.security.tool_guardrail import ToolGuardrail
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
@@ -158,8 +159,11 @@ class ReActAgent:
         # 构建 Workspace 索引并注入上下文
         index_context = self._build_index_context()
 
+        # D32: Inject memory context
+        mem_ctx = self._build_memory_context(task)
+
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + index_context},
+            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + index_context + mem_ctx},
             {"role": "user", "content": task},
         ]
 
@@ -218,7 +222,7 @@ class ReActAgent:
                     continue
 
                 messages.append({"role": "assistant", "content": answer})
-                return AgentRunResult(
+                result = AgentRunResult(
                     answer=response.content or "",
                     tool_calls_count=tool_calls_count,
                     tool_results=tool_results,
@@ -227,6 +231,8 @@ class ReActAgent:
                     steps=steps,
                     security_warnings=self._guardrail.warnings,
                 )
+                self._write_task_memory(task, result, steps)
+                return result
 
             # 有 tool_calls：提取 thought 并构建 assistant 消息
             thought = response.content or ""
@@ -300,7 +306,7 @@ class ReActAgent:
 
         # 达到上限：发一次不含 tools 的请求，让 LLM 基于已有信息总结
         final_response = await self._llm.chat(messages)
-        return AgentRunResult(
+        result = AgentRunResult(
             answer=final_response.content or "[达到最大工具调用次数，未能生成回答]",
             tool_calls_count=tool_calls_count,
             tool_results=tool_results,
@@ -309,6 +315,8 @@ class ReActAgent:
             steps=steps,
             security_warnings=self._guardrail.warnings,
         )
+        self._write_task_memory(task, result, steps)
+        return result
 
     async def _run_repo_mode(self, task: str) -> AgentRunResult:
         """REPO_MODE：分析整个项目结构。"""
@@ -348,7 +356,7 @@ class ReActAgent:
                 ],
             })
 
-        return AgentRunResult(
+        result = AgentRunResult(
             answer=answer,
             tool_calls_count=0,
             tool_results=[],
@@ -358,6 +366,9 @@ class ReActAgent:
             evidence=evidence_data,
             confidence=analysis.confidence,
         )
+        # D32: Write repo memory
+        self._write_repo_memory(analysis, task)
+        return result
 
     def _format_analysis(self, analysis, task: str) -> str:
         """格式化 RepoAnalysis 为用户可读的 Markdown。"""
@@ -478,3 +489,65 @@ class ReActAgent:
                 for tc in response.tool_calls
             ]
         return msg
+
+    # ── D32: Memory Integration ──────────────────────────
+
+    def _build_memory_context(self, task: str) -> str:
+        """Build memory context block for system prompt injection."""
+        try:
+            mgr = get_memory_manager()
+            ws_id = self._workspace_root or ""
+            ctx = mgr.build_memory_context(task, workspace_id=ws_id)
+            if ctx:
+                return "\n\n" + ctx
+        except Exception:
+            logger.debug("Failed to build memory context")
+        return ""
+
+    def _write_task_memory(
+        self, task: str, result: AgentRunResult, steps: list[AgentStep]
+    ) -> None:
+        """Write task result to memory after completion."""
+        try:
+            mgr = get_memory_manager()
+            tool_trace = [s.tool_name for s in steps if s.tool_name]
+            success = result.tool_calls_count > 0 and not result.security_warnings
+            mgr.add_task_memory(
+                prompt=task,
+                result=result.answer,
+                success=success,
+                tool_calls_count=result.tool_calls_count,
+                tool_trace=tool_trace,
+                workspace_id=self._workspace_root or "",
+            )
+            # Also record error memory on failure
+            if not success and result.answer:
+                mgr.add_error_memory(
+                    error_type="task_failed",
+                    context=task,
+                    fix_strategy="",
+                    tool_trace=tool_trace,
+                    workspace_id=self._workspace_root or "",
+                )
+        except Exception:
+            logger.debug("Failed to write task memory")
+
+    def _write_repo_memory(self, analysis, task: str) -> None:
+        """Write repo analysis result to memory."""
+        try:
+            mgr = get_memory_manager()
+            module_map = {
+                m.get("name", ""): m.get("role", "")
+                for m in analysis.core_modules
+                if m.get("name")
+            }
+            file_summary = f"{len(analysis.core_modules)} modules, {len(analysis.execution_flow)} flow steps"
+            mgr.add_repo_memory(
+                workspace_id=self._workspace_root or "",
+                file_summary=file_summary,
+                module_map=module_map,
+                analysis_result=analysis.raw_output[:500],
+                confidence=analysis.confidence,
+            )
+        except Exception:
+            logger.debug("Failed to write repo memory")

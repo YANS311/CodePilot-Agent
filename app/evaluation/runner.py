@@ -21,6 +21,7 @@ from pathlib import Path
 from app.evaluation.analyzer import analyze_error
 from app.evaluation.schema import EvalResult, EvalTask
 from app.execution.local_runner import LocalExecutionRunner
+from app.memory.memory_manager import get_memory_manager
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,13 @@ class EvaluationRunner:
                 passed=test_result.passed,
                 failed=test_result.failed,
             )
+            # D32: track memory utilization
+            try:
+                mem_mgr = get_memory_manager()
+                similar = mem_mgr.query_task_memory(task.task, limit=1)
+                eval_result.memory_utilized = len(similar) > 0
+            except Exception:
+                pass
             # 错误归因
             if not eval_result.success:
                 analyze_error(eval_result)

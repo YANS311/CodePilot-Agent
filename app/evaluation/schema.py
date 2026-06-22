@@ -67,6 +67,12 @@ class EvalResult:
     # 工具调用详情（高级指标用）
     steps: list[ToolCallRecord] = field(default_factory=list)
     tool_results: list[ToolCallRecord] = field(default_factory=list)
+    # Stress test tracking
+    is_retry_result: bool = False  # 是否为重试后的结果
+    retry_count: int = 0  # 重试次数
+    files_modified: list[str] = field(default_factory=list)  # 实际修改的文件列表
+    # D32: memory tracking
+    memory_utilized: bool = False  # whether historical memory was injected
 
     def to_dict(self) -> dict:
         return {
@@ -81,4 +87,45 @@ class EvalResult:
             "failed": self.failed,
             "error_type": self.error_type,
             "error_reason": self.error_reason,
+        }
+
+    def to_unified(self) -> dict:
+        """Convert to AgentFinalOutput-compatible dict (D23)."""
+        tools_used = []
+        seen: set = set()
+        for s in self.steps:
+            if s.tool_name and s.tool_name not in seen:
+                seen.add(s.tool_name)
+                tools_used.append(s.tool_name)
+
+        execution_trace = []
+        for s in self.steps:
+            execution_trace.append({
+                "step_id": len(execution_trace) + 1,
+                "action": s.observation[:200] if s.observation else "",
+                "tool": s.tool_name,
+                "input": "",
+                "output": s.observation[:500] if s.observation else "",
+                "success": s.success,
+                "duration_ms": 0,
+            })
+
+        return {
+            "mode": "eval",
+            "summary": self.final_answer,
+            "execution_trace": execution_trace,
+            "tools_used": tools_used,
+            "metrics": {
+                "task_success": self.success,
+                "tool_calls": self.tool_calls_count,
+                "duration_ms": self.duration_ms,
+                "test_pass": self.test_success,
+                "test_passed": self.passed,
+                "test_failed": self.failed,
+                "security_block": False,
+                "evidence_count": 0,
+            },
+            "evidence": [],
+            "confidence": 0.0,
+            "security_warnings": [],
         }
