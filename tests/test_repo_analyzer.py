@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.agent.repo_analyzer import RepoAnalyzer, RepoAnalysis, ClaimEvidence, _format_evidence_index
 from app.agent.evidence_extractor import EvidenceItem
-from app.agent.react_agent import _detect_mode
+from app.router.intent_router import IntentRouter, INTENT_REACT, INTENT_REPO
 from app.workspace.indexer import WorkspaceIndex, FileEntry
 
 
@@ -47,32 +47,37 @@ def _mock_llm(response_text: str) -> AsyncMock:
 
 
 class TestModeDetection:
+    def _route(self, task: str) -> str:
+        """Helper: route task and return intent."""
+        router = IntentRouter()
+        return router.route(task).intent
+
     def test_react_mode_default(self):
-        assert _detect_mode("修复 calculator 的 bug") == "react"
+        assert self._route("修复 calculator 的 bug") == INTENT_REACT
 
     def test_react_mode_fix(self):
-        assert _detect_mode("fix the subtract function") == "react"
+        assert self._route("fix the subtract function") == INTENT_REACT
 
     def test_repo_mode_chinese(self):
-        assert _detect_mode("这个项目做什么") == "repo"
+        assert self._route("这个项目做什么") == INTENT_REPO
 
     def test_repo_mode_architecture(self):
-        assert _detect_mode("整体架构是什么") == "repo"
+        assert self._route("整体架构是什么") == INTENT_REPO
 
     def test_repo_mode_flow(self):
-        assert _detect_mode("系统流程是怎样的") == "repo"
+        assert self._route("系统流程是怎样的") == INTENT_REPO
 
     def test_repo_mode_run(self):
-        assert _detect_mode("怎么运行这个项目") == "repo"
+        assert self._route("怎么运行这个项目") == INTENT_REPO
 
     def test_repo_mode_structure(self):
-        assert _detect_mode("项目结构分析") == "repo"
+        assert self._route("项目结构分析") == INTENT_REPO
 
     def test_repo_mode_english(self):
-        assert _detect_mode("show me the architecture") == "repo"
+        assert self._route("show me the architecture") == INTENT_REPO
 
     def test_repo_mode_overview(self):
-        assert _detect_mode("give me an overview") == "repo"
+        assert self._route("give me an overview") == INTENT_REPO
 
 
 # ═══════════════════════════════════════════

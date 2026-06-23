@@ -74,7 +74,7 @@ class TestLocalRunnerSuccess:
     def test_run_all_tests(self):
         """运行 workspace 内所有测试 — 验证 runner 正常工作。"""
         runner = LocalExecutionRunner()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_pytest(WORKSPACE)
         )
         # workspace 可能有预置的失败测试，只要求发现并执行了测试
@@ -83,7 +83,7 @@ class TestLocalRunnerSuccess:
 
     def test_run_specific_file(self):
         runner = LocalExecutionRunner()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_pytest(WORKSPACE, target="tests/test_health.py")
         )
         assert result.success is True
@@ -92,7 +92,7 @@ class TestLocalRunnerSuccess:
 
     def test_stdout_not_empty(self):
         runner = LocalExecutionRunner()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_pytest(WORKSPACE, target="tests/test_health.py")
         )
         assert "PASSED" in result.stdout or "passed" in result.stdout
@@ -113,7 +113,7 @@ class TestLocalRunnerFailure:
         )
         try:
             runner = LocalExecutionRunner()
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 runner.run_pytest(WORKSPACE, target="test_must_fail.py")
             )
             assert result.success is False
@@ -138,7 +138,7 @@ class TestLocalRunnerTimeout:
         )
         try:
             runner = LocalExecutionRunner()
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 runner.run_pytest(WORKSPACE, target="test_infinite.py")
             )
             assert result.success is False
@@ -156,7 +156,7 @@ class TestLocalRunnerTimeout:
 class TestLocalRunnerInvalid:
     def test_traversal_blocked(self):
         runner = LocalExecutionRunner()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_pytest(WORKSPACE, target="../../etc/passwd")
         )
         assert result.success is False
@@ -164,7 +164,7 @@ class TestLocalRunnerInvalid:
 
     def test_nonexistent_workspace(self):
         runner = LocalExecutionRunner()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_pytest("/nonexistent/path")
         )
         assert result.success is False
@@ -203,7 +203,7 @@ class TestRunnerFactory:
 class TestRunTestsToolRefactored:
     def test_returns_json(self):
         tool = RunTestsTool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="tests/test_health.py")
         )
         data = json.loads(result)
@@ -214,7 +214,7 @@ class TestRunTestsToolRefactored:
 
     def test_success_case(self):
         tool = RunTestsTool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="tests/test_health.py")
         )
         data = json.loads(result)
@@ -230,7 +230,7 @@ class TestRunTestsToolRefactored:
         )
         try:
             tool = RunTestsTool()
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 tool.run(workspace_root=WORKSPACE, target="test_fail_refactor.py")
             )
             data = json.loads(result)
@@ -241,7 +241,7 @@ class TestRunTestsToolRefactored:
 
     def test_explicit_mode(self):
         tool = RunTestsTool(mode="local")
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="tests/test_health.py")
         )
         data = json.loads(result)
@@ -249,7 +249,7 @@ class TestRunTestsToolRefactored:
 
     def test_nonexistent_workspace(self):
         tool = RunTestsTool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root="/nonexistent/path")
         )
         assert "错误" in result

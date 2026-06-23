@@ -67,19 +67,26 @@ def _kv(key: str, val: str) -> None:
 # ── Demo 执行 ──────────────────────────────────────────────
 
 def run_demo(base_url: str, demo: dict, timeout: float = 120.0) -> dict:
-    """执行单个 Demo，返回统一结构化结果。"""
+    """执行单个 Demo，返回统一结构化结果 (AgentFinalOutput format)."""
     result: dict[str, Any] = {
         "demo_id": demo["id"],
         "name": demo["name"],
         "input": demo["task"],
+        # D23: unified output fields
+        "mode": "",
+        "summary": "",
+        "execution_trace": [],
+        "tools_used": [],
+        "metrics": {},
+        "evidence": [],
+        "confidence": 0.0,
+        "security_warnings": [],
+        # Legacy fields for backwards compat
         "agent_trace": [],
         "tool_calls": [],
         "final_result": "",
         "execution_time_s": 0.0,
         "success": False,
-        "evidence": [],
-        "confidence": 0.0,
-        "security_warnings": [],
         "error": "",
     }
 
@@ -95,10 +102,19 @@ def run_demo(base_url: str, demo: dict, timeout: float = 120.0) -> dict:
 
         result["execution_time_s"] = round(time.time() - start, 1)
         result["success"] = True
-        result["final_result"] = data.get("answer", "")
+
+        # D23: populate unified fields from API response
+        result["mode"] = data.get("mode", "react")
+        result["summary"] = data.get("answer", "")
+        result["execution_trace"] = data.get("execution_trace", [])
+        result["tools_used"] = data.get("tools_used", [])
+        result["metrics"] = data.get("metrics", {})
         result["evidence"] = data.get("evidence", [])
         result["confidence"] = data.get("confidence", 0.0)
         result["security_warnings"] = data.get("security_warnings", [])
+
+        # Legacy compat
+        result["final_result"] = data.get("answer", "")
 
         # Agent trace (thoughts)
         for thought in data.get("thoughts", []):

@@ -35,7 +35,7 @@ class TestWriteFile:
     def test_write_new_file(self):
         target = Path(WORKSPACE) / "_test_new_file.txt"
         try:
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 self.tool.run(
                     workspace_root=WORKSPACE,
                     path="_test_new_file.txt",
@@ -53,7 +53,7 @@ class TestWriteFile:
         target = Path(WORKSPACE) / "_test_overwrite.txt"
         try:
             target.write_text("old content", encoding="utf-8")
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 self.tool.run(
                     workspace_root=WORKSPACE,
                     path="_test_overwrite.txt",
@@ -69,7 +69,7 @@ class TestWriteFile:
     def test_auto_create_parent_dirs(self):
         target = Path(WORKSPACE) / "_test_nested" / "deep" / "file.txt"
         try:
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 self.tool.run(
                     workspace_root=WORKSPACE,
                     path="_test_nested/deep/file.txt",
@@ -85,7 +85,7 @@ class TestWriteFile:
                 shutil.rmtree(nested)
 
     def test_path_traversal_blocked(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(
                 workspace_root=WORKSPACE,
                 path="../../etc/passwd",
@@ -96,7 +96,7 @@ class TestWriteFile:
         assert "超出" in result
 
     def test_write_to_git_blocked(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(
                 workspace_root=WORKSPACE,
                 path=".git/config",
@@ -108,7 +108,7 @@ class TestWriteFile:
 
     def test_content_too_large(self):
         huge = "x" * (100 * 1024 + 1)  # 100KB + 1 byte
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(
                 workspace_root=WORKSPACE,
                 path="_test_huge.txt",
@@ -121,7 +121,7 @@ class TestWriteFile:
     def test_returns_byte_count(self):
         target = Path(WORKSPACE) / "_test_bytes.txt"
         try:
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 self.tool.run(
                     workspace_root=WORKSPACE,
                     path="_test_bytes.txt",
@@ -147,7 +147,7 @@ class TestGitDiff:
         """临时目录不是 git repo，应返回错误。"""
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 self.tool.run(workspace_root=tmp)
             )
             assert "错误" in result
@@ -155,7 +155,7 @@ class TestGitDiff:
 
     def test_git_repo_returns_diff(self):
         """当前项目是 git repo，应能返回 diff 或 clean。"""
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE)
         )
         # 当前 workspace/examples 下的文件可能已 commit，也可能有未暂存变更
@@ -163,7 +163,7 @@ class TestGitDiff:
         assert len(result) > 0
 
     def test_nonexistent_workspace(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root="/nonexistent/path")
         )
         assert "错误" in result
@@ -249,7 +249,7 @@ class TestAgentFixCode:
         ])
 
         agent = ReActAgent(llm, _make_full_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("把 buggy_calculator.py 里的 subtract 函数改正确"
                        "，它错误地用了加法而不是减法。"
                        "只修复 subtract，其他方法不动。"

@@ -1,0 +1,165 @@
+{
+  "version": "1.0",
+  "description": "CodePilot Agent Stress Test — real capability boundary evaluation",
+  "metric": "Stress TSR = 通过任务数 / 总任务数",
+  "tasks": [
+    {
+      "id": "stress-multifile-01",
+      "name": "Multi-file bug fix: TodoService complete() + list_pending()",
+      "difficulty": "medium",
+      "category": "multi-file-bug-fix",
+      "task": "修复 todo_service.py 中的两个 bug：(1) complete() 方法修改了 done 状态但没有调用 _save() 持久化，(2) list_pending() 的过滤条件反了，返回的是已完成的而不是未完成的",
+      "files_to_modify": ["examples/todo_service.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestTodoCompletePersistence",
+      "expected_behavior": "complete() 调用 _save()，list_pending() 返回 not done 的 todo",
+      "success_criteria": [
+        "complete() 方法在设置 todo.done = True 后调用 self._save()",
+        "list_pending() 的列表推导式条件从 if t.done 改为 if not t.done"
+      ],
+      "reference_fix": "在 complete() 中添加 self._save()，将 list_pending() 的条件从 if t.done 改为 if not t.done"
+    },
+    {
+      "id": "stress-multifile-02",
+      "name": "Multi-file bug fix: User.to_dict() + Task.to_dict() missing fields",
+      "difficulty": "medium",
+      "category": "multi-file-bug-fix",
+      "task": "修复 data_models.py 中的两个 bug：(1) User.to_dict() 缺少 created_at 字段，(2) Task.to_dict() 缺少 priority 字段",
+      "files_to_modify": ["examples/data_models.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestUserToDict",
+      "expected_behavior": "User.to_dict() 包含 created_at，Task.to_dict() 包含 priority",
+      "success_criteria": [
+        "User.to_dict() 返回的字典包含 created_at 键",
+        "Task.to_dict() 返回的字典包含 priority 键"
+      ],
+      "reference_fix": "在 User.to_dict() 中添加 'created_at': self.created_at，在 Task.to_dict() 中添加 'priority': self.priority"
+    },
+    {
+      "id": "stress-multifile-03",
+      "name": "Multi-file bug fix: TaskManager.list_by_priority() returns None",
+      "difficulty": "medium",
+      "category": "multi-file-bug-fix",
+      "task": "修复 data_models.py 中 TaskManager.list_by_priority() 的 bug：它使用 list.sort() 但 sort() 返回 None，应该用 sorted() 返回新列表",
+      "files_to_modify": ["examples/data_models.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestTaskManagerListByPriority",
+      "expected_behavior": "list_by_priority() 返回排序后的列表，不是 None",
+      "success_criteria": [
+        "list_by_priority() 返回 list 类型，不是 None",
+        "返回的列表按优先级升序排列"
+      ],
+      "reference_fix": "将 return result.sort(key=lambda t: t.priority) 改为 return sorted(result, key=lambda t: t.priority)"
+    },
+    {
+      "id": "stress-mixed-01",
+      "name": "Mixed instruction: Fix all TodoService bugs + explain",
+      "difficulty": "hard",
+      "category": "mixed-instruction",
+      "task": "修复 todo_service.py 中的所有 bug 并解释每个修复的原因。需要修复：(1) complete() 不保存，(2) list_pending() 条件反了。修复后运行测试验证",
+      "files_to_modify": ["examples/todo_service.py"],
+      "test_target": "tests/test_stress_mixed.py::TestTodoServiceAllBugs",
+      "expected_behavior": "所有 3 个测试通过",
+      "success_criteria": [
+        "complete() 调用 _save()",
+        "list_pending() 条件正确",
+        "test_complete_persists 通过",
+        "test_list_pending_correct 通过",
+        "test_list_done_correct 通过"
+      ],
+      "reference_fix": "在 complete() 中添加 self._save()，将 list_pending() 条件从 if t.done 改为 if not t.done"
+    },
+    {
+      "id": "stress-mixed-02",
+      "name": "Mixed instruction: Fix TaskManager + explain + test",
+      "difficulty": "hard",
+      "category": "mixed-instruction",
+      "task": "修复 data_models.py 中 TaskManager.list_by_priority() 的 bug，解释为什么原来的代码返回 None，并运行测试验证修复",
+      "files_to_modify": ["examples/data_models.py"],
+      "test_target": "tests/test_stress_mixed.py::TestTaskManagerAllBugs",
+      "expected_behavior": "list_by_priority() 返回排序列表，2 个测试通过",
+      "success_criteria": [
+        "list_by_priority() 返回 sorted() 结果",
+        "test_list_by_priority_returns_sorted_list 通过",
+        "test_list_by_priority_filters 通过"
+      ],
+      "reference_fix": "将 return result.sort(...) 改为 return sorted(result, key=lambda t: t.priority)"
+    },
+    {
+      "id": "stress-repo-understand-01",
+      "name": "Repo understanding + modification: Analyze then fix",
+      "difficulty": "hard",
+      "category": "repo-understand-modify",
+      "task": "先分析 todo_service.py 和 data_models.py 的整体架构和模块关系，然后修复 data_models.py 中 TaskManager.list_by_priority() 返回 None 的 bug",
+      "files_to_modify": ["examples/data_models.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestTaskManagerListByPriority",
+      "expected_behavior": "先输出分析报告，再修复 bug",
+      "success_criteria": [
+        "回答中包含对 todo_service.py 和 data_models.py 的分析",
+        "list_by_priority() 修复后返回排序列表",
+        "测试通过"
+      ],
+      "reference_fix": "先用 search_code/read_file 分析代码，再将 return result.sort(...) 改为 return sorted(result, key=lambda t: t.priority)"
+    },
+    {
+      "id": "stress-partial-recovery-01",
+      "name": "Partial failure recovery: Incomplete first fix then complete",
+      "difficulty": "hard",
+      "category": "partial-failure-recovery",
+      "task": "修复 todo_service.py 中 complete() 的 bug（不保存），如果测试失败则继续修复直到通过",
+      "files_to_modify": ["examples/todo_service.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestTodoCompletePersistence",
+      "expected_behavior": "Agent 修复后测试通过，如果第一次修复不完整则自动重试",
+      "success_criteria": [
+        "complete() 调用 _save()",
+        "测试通过"
+      ],
+      "reference_fix": "在 complete() 中 todo.done = True 之后添加 self._save()"
+    },
+    {
+      "id": "stress-partial-recovery-02",
+      "name": "Partial failure recovery: Fix + verify + re-fix",
+      "difficulty": "hard",
+      "category": "partial-failure-recovery",
+      "task": "修复 data_models.py 中 User.to_dict() 缺少 created_at 的 bug，运行测试验证，如果测试失败则分析原因并重新修复",
+      "files_to_modify": ["examples/data_models.py"],
+      "test_target": "tests/test_stress_multi_file.py::TestUserToDict",
+      "expected_behavior": "修复后测试通过，Agent 能从失败中恢复",
+      "success_criteria": [
+        "User.to_dict() 包含 created_at",
+        "测试通过"
+      ],
+      "reference_fix": "在 User.to_dict() 的返回字典中添加 'created_at': self.created_at"
+    },
+    {
+      "id": "stress-complex-chain-01",
+      "name": "Complex chain: 3 bugs across 2 files",
+      "difficulty": "hard",
+      "category": "multi-file-bug-fix",
+      "task": "修复跨两个文件的 3 个 bug：(1) todo_service.py 中 complete() 不保存，(2) todo_service.py 中 list_pending() 条件反了，(3) data_models.py 中 list_by_priority() 返回 None。修复后运行所有相关测试",
+      "files_to_modify": ["examples/todo_service.py", "examples/data_models.py"],
+      "test_target": "tests/test_stress_multi_file.py",
+      "expected_behavior": "所有 5 个测试通过",
+      "success_criteria": [
+        "complete() 调用 _save()",
+        "list_pending() 条件正确",
+        "list_by_priority() 返回排序列表",
+        "所有 5 个测试通过"
+      ],
+      "reference_fix": "在 todo_service.py 中修复 complete() 和 list_pending()，在 data_models.py 中修复 list_by_priority()"
+    },
+    {
+      "id": "stress-complex-chain-02",
+      "name": "Complex chain: Fix + explain + verify all",
+      "difficulty": "hard",
+      "category": "mixed-instruction",
+      "task": "修复 todo_service.py 和 data_models.py 中的所有 bug，解释每个修复的原因和影响，然后运行 tests/test_stress_mixed.py 验证所有修复",
+      "files_to_modify": ["examples/todo_service.py", "examples/data_models.py"],
+      "test_target": "tests/test_stress_mixed.py",
+      "expected_behavior": "所有 5 个测试通过，回答包含修复解释",
+      "success_criteria": [
+        "所有 bug 修复完成",
+        "回答解释了每个修复的原因",
+        "tests/test_stress_mixed.py 全部通过"
+      ],
+      "reference_fix": "修复 todo_service.py 的 complete() 和 list_pending()，修复 data_models.py 的 list_by_priority()"
+    }
+  ]
+}

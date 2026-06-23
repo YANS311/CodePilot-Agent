@@ -11,6 +11,8 @@ from app.agent.react_agent import ReActAgent
 from app.core.config import settings
 from app.api.upload import _resolve_workspace_id
 from app.core.llm_client import LLMClient
+from app.core.workspace_lock import get_lock_manager
+from app.output.formatter import format_output
 from app.tools.git_diff import GitDiffTool
 from app.tools.git_status import GitStatusTool
 from app.tools.read_file import ReadFileTool
@@ -62,6 +64,11 @@ class ChatResponse(BaseModel):
     # D18: evidence-based fields
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     confidence: float = 0.0
+    # D23: unified output fields
+    mode: str = "react"
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    execution_trace: list[dict[str, Any]] = Field(default_factory=list)
+    tools_used: list[str] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):
@@ -153,6 +160,16 @@ async def get_demos():
     )
 
 
+@router.get("/lock/status")
+async def get_lock_status(
+    workspace_id: Optional[str] = Query(None, description="Workspace ID"),
+):
+    """获取 workspace 锁状态。"""
+    ws = str(_resolve_workspace_id(workspace_id))
+    lock_mgr = get_lock_manager()
+    return lock_mgr.get_status(ws)
+
+
 @router.post("/demo", response_model=DemoResponse)
 async def run_demo(req: DemoRequest):
     """获取 Demo 场景信息（前端用 task 填充输入框）。"""
@@ -171,10 +188,73 @@ async def run_demo(req: DemoRequest):
 @router.post("/chat", response_model=ChatResponse, responses={500: {"model": ErrorResponse}})
 async def chat(req: ChatRequest) -> ChatResponse:
     """执行编码任务，返回完整结果。"""
+    import uuid as _uuid
+
+    ws = str(_resolve_workspace_id(req.workspace_id))
+    lock_mgr = get_lock_manager()
+    task_id = _uuid.uuid4().hex[:8]
+
+    # Check lock status
+    status = lock_mgr.get_status(ws)
+    if status["status"] == "locked":
+        # Already running — queue this request
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+
+        async def _queued_task():
+            entry = await lock_mgr.wait_in_queue(
+                ws, task_id, user_id="default", task_prompt=req.task,
+            )
+            try:
+                agent = _build_agent(workspace_root=ws)
+                result = await agent.run(req.task)
+                return result
+            finally:
+                lock_mgr.release(ws, task_id)
+
+        # For now, return queued status (non-blocking)
+        # In production, this would be a WebSocket or SSE subscription
+        return ChatResponse(
+            answer="",
+            tool_calls_count=0,
+            tool_results=[],
+            messages=[],
+            thoughts=[],
+            steps=[],
+            security_warnings=[],
+            evidence=[],
+            confidence=0.0,
+            mode="queued",
+            metrics={"status": "queued", "queue_position": status["queue_length"] + 1},
+            execution_trace=[],
+            tools_used=[],
+        )
+
+    # Acquire lock and execute
     try:
-        ws = str(_resolve_workspace_id(req.workspace_id))
+        await lock_mgr.acquire(ws, task_id, user_id="default", task_prompt=req.task)
+
         agent = _build_agent(workspace_root=ws)
         result = await agent.run(req.task)
+
+        # D23: format through unified output layer
+        from app.router.intent_router import get_intent_router, INTENT_REPO
+        intent = get_intent_router().route(req.task)
+        mode = intent.intent if intent.intent != "security" else "security"
+        if result.security_warnings:
+            mode = "security"
+
+        unified = format_output(
+            mode=mode,
+            answer=result.answer,
+            steps=result.steps,
+            tool_results=result.tool_results,
+            evidence=result.evidence,
+            confidence=result.confidence,
+            security_warnings=result.security_warnings,
+            thoughts=result.thoughts,
+        )
+
         return ChatResponse(
             answer=result.answer,
             tool_calls_count=result.tool_calls_count,
@@ -204,10 +284,17 @@ async def chat(req: ChatRequest) -> ChatResponse:
             security_warnings=result.security_warnings,
             evidence=result.evidence,
             confidence=result.confidence,
+            # D23: unified fields
+            mode=unified.mode,
+            metrics=unified.metrics.to_dict(),
+            execution_trace=[s.to_dict() for s in unified.execution_trace],
+            tools_used=unified.tools_used,
         )
     except Exception as exc:
         logger.exception("Chat request failed")
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        lock_mgr.release(ws, task_id)
 
 
 @router.post("/chat/stream")

@@ -30,6 +30,15 @@ workspace/uploads/
 # Project docs (local only)
 PROJECT_SUMMARY.md
 docs/interview_3min.md
+docs/interview_master.md
+docs/interview_final.md
+docs/interview_defense.md
+docs/interview_deep_dive.md
+docs/interview_questions.md
+docs/interview_onepager.md
+docs/interview_attack_chain.md
+docs/interview_counterattack.md
+docs/system_summary.md
 docs/demo_script_final.md
 docs/demo_guide.md
 docs/demo_flows.md

@@ -46,7 +46,7 @@ class TestAgentDirectAnswer:
             ChatResponse(content="FastAPI 是一个现代 Python Web 框架。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("FastAPI 是什么？")
         )
         assert "FastAPI" in result.answer
@@ -70,7 +70,7 @@ class TestAgentSingleToolCall:
             ChatResponse(content="Calculator 类定义在 workspace/examples/buggy_calculator.py 中。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("项目里有 Calculator 类吗？")
         )
         assert "Calculator" in result.answer
@@ -104,23 +104,24 @@ class TestAgentMultiStep:
             ChatResponse(content="Calculator 类有 add, subtract, multiply, divide 等方法。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("项目里有没有 ToolRegistry 类？")
         )
         assert result.tool_calls_count == 2
         assert len(result.tool_results) == 2
         assert "Calculator" in result.answer
 
-        # 验证消息历史结构
+        # 验证消息历史包含关键消息（预算提示可能插入额外 system 消息）
         msgs = result.messages
-        # system + user + assistant(tc1) + tool(tc1) + assistant(tc2) + tool(tc2) + assistant(answer)
-        assert msgs[0]["role"] == "system"
-        assert msgs[1]["role"] == "user"
-        assert msgs[2]["role"] == "assistant"
-        assert msgs[3]["role"] == "tool"
-        assert msgs[4]["role"] == "assistant"
-        assert msgs[5]["role"] == "tool"
-        assert msgs[6]["role"] == "assistant"
+        roles = [m["role"] for m in msgs]
+        assert "system" in roles
+        assert "user" in roles
+        assert "assistant" in roles
+        assert "tool" in roles
+        # 至少有 2 个 tool 消息（search_code + read_file）
+        assert roles.count("tool") >= 2
+        # 最后一条是 assistant（最终回答）
+        assert roles[-1] == "assistant"
 
 
 # ═══════════════════════════════════════════
@@ -142,7 +143,7 @@ class TestAgentMaxToolCalls:
         llm = _mock_llm(tool_call_responses + [final])
 
         agent = ReActAgent(llm, _make_registry(), WORKSPACE, max_tool_calls=5)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("无限搜索任务")
         )
         assert result.tool_calls_count == 5
@@ -166,7 +167,7 @@ class TestAgentToolFailure:
             ChatResponse(content="文件 nonexistent.py 不存在。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("读取 nonexistent.py")
         )
         assert result.tool_calls_count == 1
@@ -187,7 +188,7 @@ class TestAgentRunResult:
             ChatResponse(content="简单回答。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("测试任务")
         )
         assert isinstance(result, AgentRunResult)

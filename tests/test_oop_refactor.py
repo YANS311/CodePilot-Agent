@@ -76,7 +76,7 @@ class TestRegistryPolymorphism:
         reg = ToolRegistry()
         reg.register(ReadFileTool())
         tc = ToolCall(name="read_file", arguments={"path": "examples/buggy_calculator.py"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is True
@@ -86,7 +86,7 @@ class TestRegistryPolymorphism:
         reg = ToolRegistry()
         reg.register(SearchCodeTool())
         tc = ToolCall(name="search_code", arguments={"query": "Calculator"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is True

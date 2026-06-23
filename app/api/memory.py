@@ -48,3 +48,25 @@ async def query_memory(
         "similar_tasks": [t.to_dict() for t in similar_tasks],
         "similar_errors": [e.to_dict() for e in similar_errors],
     }
+
+
+@router.get("/memory/search")
+async def search_vector_memory(
+    query: str = Query(..., min_length=1, description="Semantic search query"),
+    top_k: int = Query(5, ge=1, le=20, description="Max results"),
+    memory_type: Optional[str] = Query(None, description="Filter: task, error, repo"),
+):
+    """Semantic search across vector memory (FAISS)."""
+    mgr = get_memory_manager()
+
+    results = mgr.search_vector_memory(
+        query=query,
+        top_k=top_k,
+        memory_type=memory_type,
+    )
+
+    return {
+        "query": query,
+        "results": results,
+        "total": len(results),
+    }

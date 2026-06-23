@@ -229,7 +229,7 @@ class TestRunnerRunTask:
             category="bug-fix",
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_task(task, factory)
         )
 
@@ -256,7 +256,7 @@ class TestRunnerRunTask:
             category="bug-fix",
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             runner.run_task(task, lambda ws, max_calls=None: mock_agent)
         )
 

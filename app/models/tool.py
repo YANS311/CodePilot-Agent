@@ -51,3 +51,6 @@ class AgentStep(BaseModel):
     tool_args: dict[str, Any] = Field(default_factory=dict)
     observation: str = ""
     success: bool = True
+    # Stress test tracking fields
+    is_retry: bool = False  # 是否为重试步骤（前一次失败后）
+    retry_of: int = 0  # 重试的是哪个 step_id（0 表示不是重试）

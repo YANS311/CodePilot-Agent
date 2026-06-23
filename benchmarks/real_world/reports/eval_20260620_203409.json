@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "task_id": "todo-01",
+      "repo": "todo_api",
+      "difficulty": "easy",
+      "title": "Fix complete() persistence bug",
+      "files_to_modify": [
+        "app/service.py"
+      ],
+      "baseline": {
+        "returncode": 1,
+        "passed": 0,
+        "failed": 1,
+        "errors": 0,
+        "elapsed_s": 1.66,
+        "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.9.13, pytest-8.4.2, pluggy-1.6.0 -- C:\\Users\\A\\AppData\\Local\\Programs\\Python\\Python39\\python.exe\ncachedir: .pytest_cache\nrootdir: D:\\Users\\A\\PycharmProjects\\FastAPIProject2\\benchmarks\\real_world\\reports\\work_todo-01\nplugins: anyio-4.12.1, langsmith-0.4.37, asyncio-1.2.0\nasyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... collected 1 item\n\ntests/test_todo_api.py::TestComplete::test_complete_persists FAILED      [100%]\n\n================================== FAILURES ===================================\n_____________________ TestComplete.test_complete_persists _____________________\n..\\..\\repos\\todo_api\\tests\\test_todo_api.py:45: in test_complete_persists\n    assert todo.id not in [t.id for t in pending]\nE   AssertionError: assert 1 not in [1]\nE    +  where 1 = Todo(id=1, title='Buy milk', done=True, created_at='2026-06-20T20:34:08.715471', completed_at='2026-06-20T20:34:08.715471').id\n=========================== short test summary info ===========================\nFAILED tests/test_todo_api.py::TestComplete::test_complete_persists - Asserti...\n============================== 1 failed in 0.18s ==============================\n",
+        "stderr": ""
+      },
+      "agent_result": {
+        "dry_run": true
+      },
+      "final_tests": {
+        "returncode": 1,
+        "passed": 0,
+        "failed": 1,
+        "errors": 0,
+        "elapsed_s": 1.66,
+        "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.9.13, pytest-8.4.2, pluggy-1.6.0 -- C:\\Users\\A\\AppData\\Local\\Programs\\Python\\Python39\\python.exe\ncachedir: .pytest_cache\nrootdir: D:\\Users\\A\\PycharmProjects\\FastAPIProject2\\benchmarks\\real_world\\reports\\work_todo-01\nplugins: anyio-4.12.1, langsmith-0.4.37, asyncio-1.2.0\nasyncio: mode=strict, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... collected 1 item\n\ntests/test_todo_api.py::TestComplete::test_complete_persists FAILED      [100%]\n\n================================== FAILURES ===================================\n_____________________ TestComplete.test_complete_persists _____________________\n..\\..\\repos\\todo_api\\tests\\test_todo_api.py:45: in test_complete_persists\n    assert todo.id not in [t.id for t in pending]\nE   AssertionError: assert 1 not in [1]\nE    +  where 1 = Todo(id=1, title='Buy milk', done=True, created_at='2026-06-20T20:34:08.715471', completed_at='2026-06-20T20:34:08.715471').id\n=========================== short test summary info ===========================\nFAILED tests/test_todo_api.py::TestComplete::test_complete_persists - Asserti...\n============================== 1 failed in 0.18s ==============================\n",
+        "stderr": ""
+      },
+      "fixed": false
+    }
+  ],
+  "metrics": {
+    "total_tasks": 1,
+    "fixed": 0,
+    "fix_rate": 0.0,
+    "by_difficulty": {
+      "easy": {
+        "total": 1,
+        "fixed": 0,
+        "rate": 0.0
+      }
+    },
+    "by_repo": {
+      "todo_api": {
+        "total": 1,
+        "fixed": 0,
+        "rate": 0.0
+      }
+    },
+    "files_accuracy": [
+      {
+        "task_id": "todo-01",
+        "expected_files": [
+          "app/service.py"
+        ]
+      }
+    ]
+  }
+}

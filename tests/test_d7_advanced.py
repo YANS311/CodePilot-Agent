@@ -48,7 +48,7 @@ class TestReadFileDirectoryBlocked:
     def test_dot_path_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="read_file", arguments={"path": "."})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -57,7 +57,7 @@ class TestReadFileDirectoryBlocked:
     def test_slash_path_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="read_file", arguments={"path": "/"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -65,7 +65,7 @@ class TestReadFileDirectoryBlocked:
     def test_dot_slash_path_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="read_file", arguments={"path": "./"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -73,7 +73,7 @@ class TestReadFileDirectoryBlocked:
     def test_empty_path_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="read_file", arguments={"path": ""})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -82,7 +82,7 @@ class TestReadFileDirectoryBlocked:
     def test_real_directory_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="read_file", arguments={"path": "examples"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -98,7 +98,7 @@ class TestWriteFileGuardrails:
     def test_empty_path_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="write_file", arguments={"path": "", "content": "x"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -107,7 +107,7 @@ class TestWriteFileGuardrails:
     def test_bad_suffix_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="write_file", arguments={"path": "test.exe", "content": "x"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -116,7 +116,7 @@ class TestWriteFileGuardrails:
     def test_meaningless_name_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="write_file", arguments={"path": "1cm.py", "content": "x"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -125,7 +125,7 @@ class TestWriteFileGuardrails:
     def test_tmp_py_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="write_file", arguments={"path": "tmp.py", "content": "x"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -133,7 +133,7 @@ class TestWriteFileGuardrails:
     def test_valid_py_allowed(self):
         reg = _make_registry()
         tc = ToolCall(name="write_file", arguments={"path": "valid_module.py", "content": "# ok"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is True
@@ -148,7 +148,7 @@ class TestSearchCodeGuardrails:
     def test_empty_query_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="search_code", arguments={"query": ""})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -157,7 +157,7 @@ class TestSearchCodeGuardrails:
     def test_short_query_blocked(self):
         reg = _make_registry()
         tc = ToolCall(name="search_code", arguments={"query": "a"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is False
@@ -166,7 +166,7 @@ class TestSearchCodeGuardrails:
     def test_valid_query_allowed(self):
         reg = _make_registry()
         tc = ToolCall(name="search_code", arguments={"query": "Calculator"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is True
@@ -183,7 +183,7 @@ class TestAgentRunResultSteps:
             ChatResponse(content="直接回答。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("测试任务")
         )
         assert isinstance(result, AgentRunResult)
@@ -201,7 +201,7 @@ class TestAgentRunResultSteps:
             ChatResponse(content="Calculator 类在 examples/buggy_calculator.py 中。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("找 Calculator 类"
         ))
         assert len(result.steps) == 1
@@ -231,7 +231,7 @@ class TestAgentRunResultSteps:
             ChatResponse(content="找到了。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("多步任务")
         )
         assert len(result.steps) == 2
@@ -280,14 +280,14 @@ class TestGitStatus:
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             tool = GitStatusTool()
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 tool.run(workspace_root=tmpdir)
             )
             assert "不是" in result or "git" in result.lower()
 
     def test_nonexistent_workspace(self):
         tool = GitStatusTool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root="/nonexistent/path/xyz")
         )
         assert "错误" in result

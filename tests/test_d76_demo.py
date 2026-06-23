@@ -131,7 +131,7 @@ class TestQueryTaskNoGitStatus:
             ChatResponse(content="Calculator 类有 add, subtract 等方法。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("Calculator 类有哪些方法？")
         )
 
@@ -153,7 +153,7 @@ class TestQueryTaskNoGitStatus:
             ChatResponse(content="找到了 Calculator 类。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("修复 Calculator 的 subtract 方法")
         )
 
@@ -187,7 +187,7 @@ class TestAgentThoughts:
             ChatResponse(content="完成。"),
         ])
         agent = ReActAgent(llm, _make_registry(), WORKSPACE)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             agent.run("测试任务")
         )
 

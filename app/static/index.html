@@ -325,6 +325,42 @@
         .confidence-high { background: #238636; color: #fff; }
         .confidence-mid { background: #bb8009; color: #fff; }
         .confidence-low { background: #da3633; color: #fff; }
+
+        /* ── D23: Unified Output Sections ── */
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px; margin-bottom: 8px;
+        }
+        .metric-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 10px 12px; text-align: center;
+        }
+        .metric-value {
+            font-size: 1.3rem; font-weight: 700; color: #f0f6fc;
+        }
+        .metric-label {
+            font-size: 0.75rem; color: #8b949e; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-top: 4px;
+        }
+        .metric-card.success .metric-value { color: #3fb950; }
+        .metric-card.fail .metric-value { color: #f85149; }
+        .metric-card.block .metric-value { color: #da3633; }
+        .tools-used-list {
+            display: flex; flex-wrap: wrap; gap: 6px;
+        }
+        .tool-tag {
+            background: #1c2128; border: 1px solid #30363d; border-radius: 4px;
+            padding: 3px 10px; font-size: 12px; color: #79c0ff; font-family: monospace;
+        }
+        .mode-badge {
+            display: inline-block; padding: 2px 10px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            margin-left: 8px;
+        }
+        .mode-react { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
+        .mode-repo { background: #a371f733; color: #d2a8ff; border: 1px solid #a371f7; }
+        .mode-security { background: #da363333; color: #f85149; border: 1px solid #da3633; }
+        .mode-eval { background: #23863633; color: #3fb950; border: 1px solid #238636; }
     </style>
 </head>
 <body>
@@ -349,6 +385,10 @@
                 <button id="submit-btn" onclick="submitTask()">运行</button>
             </div>
 
+            <div id="lock-status" style="display:none; padding: 8px 12px; background: #1c1e24; border: 1px solid #d29922; border-radius: 6px; margin-bottom: 12px; font-size: 13px; color: #d29922;">
+                <span id="lock-status-text"></span>
+            </div>
+
             <div id="loading"><span class="spinner"></span>Agent 正在执行任务...</div>
 
             <div id="results" style="display:none;">
@@ -357,6 +397,30 @@
                 <div id="security-container"></div>
 
                 <div id="test-result-container"></div>
+
+                <!-- D23: Unified Summary with Mode Badge -->
+                <div class="section" id="summary-section">
+                    <div class="section-title">Summary <span id="mode-badge"></span></div>
+                    <div class="answer-box" id="answer-box"></div>
+                </div>
+
+                <!-- D23: Execution Trace -->
+                <div class="section" id="trace-section" style="display:none;">
+                    <div class="section-title">Execution Trace</div>
+                    <div id="trace-list"></div>
+                </div>
+
+                <!-- D23: Tools Used -->
+                <div class="section" id="tools-section" style="display:none;">
+                    <div class="section-title">Tools Used</div>
+                    <div id="tools-list" class="tools-used-list"></div>
+                </div>
+
+                <!-- D23: Metrics -->
+                <div class="section" id="metrics-section" style="display:none;">
+                    <div class="section-title">Metrics</div>
+                    <div id="metrics-display" class="metrics-grid"></div>
+                </div>
 
                 <div class="section" id="evidence-section" style="display:none;">
                     <div class="section-title">Evidence & Confidence</div>
@@ -372,11 +436,6 @@
                 <div class="section" id="diff-section" style="display:none;">
                     <div class="section-title">Git Diff</div>
                     <div class="diff-box" id="diff-content"></div>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">最终回答</div>
-                    <div class="answer-box" id="answer-box"></div>
                 </div>
             </div>
 
@@ -638,6 +697,8 @@
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
         const hint = document.getElementById('new-file-hint');
+        const lockStatus = document.getElementById('lock-status');
+        const lockText = document.getElementById('lock-status-text');
 
         const task = input.value.trim();
         if (!task) { input.focus(); return; }
@@ -646,6 +707,7 @@
         loading.classList.add('active');
         results.style.display = 'none';
         hint.style.display = 'none';
+        lockStatus.style.display = 'none';
 
         try {
             const resp = await fetch('/api/chat', {
@@ -658,6 +720,16 @@
                 throw new Error(err.detail || '请求失败');
             }
             const data = await resp.json();
+
+            // Handle queued status
+            if (data.mode === 'queued') {
+                lockStatus.style.display = 'block';
+                lockText.textContent = `任务已排队（位置 #${data.metrics?.queue_position || 1}）。另一个任务正在执行中，请等待...`;
+                loading.classList.remove('active');
+                btn.disabled = false;
+                return;
+            }
+
             renderResults(data);
             refreshFileList();
 
@@ -687,10 +759,20 @@
         const evidenceSection = document.getElementById('evidence-section');
         const evidenceConf = document.getElementById('evidence-confidence');
         const evidenceList = document.getElementById('evidence-list');
+        const modeBadge = document.getElementById('mode-badge');
+        const traceSection = document.getElementById('trace-section');
+        const traceList = document.getElementById('trace-list');
+        const toolsSection = document.getElementById('tools-section');
+        const toolsList = document.getElementById('tools-list');
+        const metricsSection = document.getElementById('metrics-section');
+        const metricsDisplay = document.getElementById('metrics-display');
         warnContainer.innerHTML = '';
         securityContainer.innerHTML = '';
         testContainer.innerHTML = '';
         evidenceSection.style.display = 'none';
+        traceSection.style.display = 'none';
+        toolsSection.style.display = 'none';
+        metricsSection.style.display = 'none';
 
         // 渲染步骤
         stepsList.innerHTML = '';
@@ -756,6 +838,75 @@
             }
         } else {
             evidenceSection.style.display = 'none';
+        }
+
+        // D23: Render Mode Badge
+        if (data.mode) {
+            const badgeClass = 'mode-' + data.mode;
+            modeBadge.innerHTML = `<span class="mode-badge ${badgeClass}">${escapeHtml(data.mode)}</span>`;
+        } else {
+            modeBadge.innerHTML = '';
+        }
+
+        // D23: Render Execution Trace
+        if (data.execution_trace && data.execution_trace.length > 0) {
+            traceSection.style.display = 'block';
+            traceList.innerHTML = '';
+            for (const step of data.execution_trace) {
+                const item = document.createElement('div');
+                item.className = 'step-item';
+                const badge = step.success
+                    ? '<span class="step-badge success">OK</span>'
+                    : '<span class="step-badge fail">FAIL</span>';
+                let html = `<span class="step-id">Step ${step.step_id}</span> ${badge}`;
+                if (step.tool) {
+                    html += `<div class="step-action">${escapeHtml(step.tool)}(${escapeHtml(step.input)})</div>`;
+                }
+                if (step.output) {
+                    html += `<div class="step-observation">${escapeHtml(step.output)}</div>`;
+                }
+                item.innerHTML = html;
+                traceList.appendChild(item);
+            }
+        }
+
+        // D23: Render Tools Used
+        if (data.tools_used && data.tools_used.length > 0) {
+            toolsSection.style.display = 'block';
+            toolsList.innerHTML = '';
+            for (const tool of data.tools_used) {
+                const tag = document.createElement('span');
+                tag.className = 'tool-tag';
+                tag.textContent = tool;
+                toolsList.appendChild(tag);
+            }
+        }
+
+        // D23: Render Metrics
+        if (data.metrics && Object.keys(data.metrics).length > 0) {
+            metricsSection.style.display = 'block';
+            metricsDisplay.innerHTML = '';
+            const m = data.metrics;
+            const cards = [
+                { label: 'Status', value: m.task_success ? 'PASS' : (m.security_block ? 'BLOCKED' : 'RUN'), cls: m.task_success ? 'success' : (m.security_block ? 'block' : '') },
+                { label: 'Tool Calls', value: m.tool_calls, cls: '' },
+                { label: 'Duration', value: (m.duration_ms / 1000).toFixed(1) + 's', cls: '' },
+            ];
+            if (m.test_pass !== undefined) {
+                cards.push({ label: 'Tests', value: m.test_pass ? 'PASS' : 'FAIL', cls: m.test_pass ? 'success' : 'fail' });
+            }
+            if (m.evidence_count !== undefined && m.evidence_count > 0) {
+                cards.push({ label: 'Evidence', value: m.evidence_count, cls: '' });
+            }
+            if (m.security_block) {
+                cards.push({ label: 'Security', value: 'BLOCKED', cls: 'block' });
+            }
+            for (const c of cards) {
+                const card = document.createElement('div');
+                card.className = 'metric-card ' + c.cls;
+                card.innerHTML = `<div class="metric-value">${escapeHtml(String(c.value))}</div><div class="metric-label">${escapeHtml(c.label)}</div>`;
+                metricsDisplay.appendChild(card);
+            }
         }
 
         // 渲染 Test Result Card

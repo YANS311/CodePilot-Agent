@@ -1,7 +1,9 @@
-"""memory_manager.py — High-level memory operations for CodePilot Agent.
+"""memory_manager.py — Hybrid Memory Manager for CodePilot Agent.
 
-Provides CRUD + query for TaskMemory, ErrorMemory, RepoMemory.
-Integrates with the Agent loop to inject historical context.
+Combines structured memory (keyword matching) with vector memory (FAISS semantic search).
+1. Structured memory: exact/keyword match for task, error, repo records
+2. Vector memory: semantic similarity for past solutions, errors, repo summaries
+3. Merged context injection for the agent's system prompt
 """
 
 from __future__ import annotations
@@ -16,15 +18,13 @@ from app.memory.memory_store import (
     RepoMemory,
     TaskMemory,
 )
+from app.memory.vector_store import VectorMemoryStore
 
 logger = logging.getLogger(__name__)
 
 
 def _extract_keywords(prompt: str) -> list[str]:
-    """Extract meaningful keywords from a task prompt for matching.
-
-    Strips common stop words and short tokens, keeps nouns/verbs.
-    """
+    """Extract meaningful keywords from a task prompt for matching."""
     stop_words = {
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
         "have", "has", "had", "do", "does", "did", "will", "would", "could",
@@ -36,36 +36,32 @@ def _extract_keywords(prompt: str) -> list[str]:
         "such", "no", "nor", "not", "only", "own", "same", "so", "than",
         "too", "very", "just", "don", "now", "and", "but", "or", "if",
         "what", "which", "who", "whom", "this", "that", "these", "those",
-        # Chinese stop words
         "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都",
         "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你",
         "会", "着", "没有", "看", "好", "自己", "这", "他", "她", "它",
         "们", "那", "被", "从", "把", "能", "让", "还", "可以", "吗",
         "请", "帮", "帮忙", "一下", "下", "修改", "修复", "添加", "创建",
     }
-
-    # Split on whitespace and non-alphanumeric chars
     tokens = re.split(r"[\s\W_]+", prompt.lower())
-    # Keep tokens >= 2 chars and not in stop words
     keywords = [t for t in tokens if len(t) >= 2 and t not in stop_words]
-    # Deduplicate while preserving order
     seen: set[str] = set()
     unique: list[str] = []
     for kw in keywords:
         if kw not in seen:
             seen.add(kw)
             unique.append(kw)
-    return unique[:10]  # max 10 keywords
+    return unique[:10]
 
 
-class MemoryManager:
-    """High-level memory operations — CRUD + query + prompt injection.
+class HybridMemoryManager:
+    """Hybrid memory — structured (keyword) + vector (semantic) retrieval.
 
     Singleton via get_memory_manager().
     """
 
     def __init__(self) -> None:
         self._store = InMemoryStore()
+        self._vector = VectorMemoryStore()
 
     # ── Task Memory ──────────────────────────────────────
 
@@ -79,7 +75,7 @@ class MemoryManager:
         workspace_id: str = "",
         duration_ms: int = 0,
     ) -> TaskMemory:
-        """Record a completed task."""
+        """Record a completed task to both structured and vector stores."""
         mem = TaskMemory(
             prompt=prompt,
             result=result,
@@ -90,6 +86,17 @@ class MemoryManager:
             duration_ms=duration_ms,
         )
         self._store.add_task(mem)
+
+        # Write summary to vector store
+        status = "success" if success else "failed"
+        tools_str = ", ".join(tool_trace[:5]) if tool_trace else "no tools"
+        vec_text = f"[{status}] Task: {prompt[:200]}. Result: {result[:200]}. Tools: {tools_str}"
+        self._vector.add_memory(
+            text=vec_text,
+            metadata={"task_id": mem.task_id, "success": success, "workspace_id": workspace_id},
+            memory_type="task",
+        )
+
         logger.info("Task memory added: %s (success=%s)", mem.task_id, success)
         return mem
 
@@ -113,7 +120,7 @@ class MemoryManager:
         tool_trace: list[str] | None = None,
         workspace_id: str = "",
     ) -> ErrorMemory:
-        """Record an error pattern and its fix strategy."""
+        """Record an error pattern to both structured and vector stores."""
         mem = ErrorMemory(
             error_type=error_type,
             context=context,
@@ -122,6 +129,16 @@ class MemoryManager:
             workspace_id=workspace_id,
         )
         self._store.add_error(mem)
+
+        # Write to vector store for semantic retrieval
+        fix_str = f". Fix: {fix_strategy[:200]}" if fix_strategy else ""
+        vec_text = f"[error:{error_type}] {context[:300]}{fix_str}"
+        self._vector.add_memory(
+            text=vec_text,
+            metadata={"error_id": mem.error_id, "error_type": error_type},
+            memory_type="error",
+        )
+
         logger.info("Error memory added: %s (type=%s)", mem.error_id, error_type)
         return mem
 
@@ -147,7 +164,7 @@ class MemoryManager:
         analysis_result: str = "",
         confidence: float = 0.0,
     ) -> RepoMemory:
-        """Record a workspace analysis result."""
+        """Record a workspace analysis to both structured and vector stores."""
         mem = RepoMemory(
             workspace_id=workspace_id,
             file_summary=file_summary,
@@ -156,6 +173,16 @@ class MemoryManager:
             confidence=confidence,
         )
         self._store.add_repo(mem)
+
+        # Write to vector store
+        modules_str = ", ".join(list(module_map.keys())[:10]) if module_map else "unknown"
+        vec_text = f"[repo:{workspace_id}] Modules: {modules_str}. Summary: {file_summary[:300]}"
+        self._vector.add_memory(
+            text=vec_text,
+            metadata={"repo_id": mem.repo_id, "workspace_id": workspace_id, "confidence": confidence},
+            memory_type="repo",
+        )
+
         logger.info("Repo memory added: %s (ws=%s)", mem.repo_id, workspace_id)
         return mem
 
@@ -166,31 +193,48 @@ class MemoryManager:
     def get_repo_memory(self, limit: int = 20) -> list[RepoMemory]:
         return self._store.get_repos(limit)
 
-    # ── Prompt Injection ─────────────────────────────────
+    # ── Vector Search ────────────────────────────────────
+
+    def search_vector_memory(
+        self,
+        query: str,
+        top_k: int = 5,
+        memory_type: Optional[str] = None,
+    ) -> list[dict]:
+        """Semantic search across all vector memories.
+
+        Returns list of dicts with text, score, metadata, memory_type.
+        """
+        results = self._vector.search_memory(query, top_k=top_k, memory_type=memory_type)
+        return [
+            {
+                "text": entry.text[:300],
+                "score": round(score, 4),
+                "memory_type": entry.memory_type,
+                "metadata": entry.metadata,
+            }
+            for entry, score in results
+        ]
+
+    # ── Hybrid Prompt Injection ──────────────────────────
 
     def build_memory_context(self, task: str, workspace_id: str = "") -> str:
-        """Build a memory context block to inject into the agent's system prompt.
+        """Build a merged memory context block for the agent's system prompt.
 
-        Returns a string like:
-            ## Historical Context
-            ### Similar past tasks:
-            - [success] Fixed bug in todo.py by...
-            ### Previous failures to avoid:
-            - test_failed: pytest assertion in line 42...
-            ### Repo context:
-            - Last analysis: AI System with 12 modules...
-
-        Returns empty string if no relevant memories found.
+        Combines structured (keyword) and vector (semantic) results:
+        1. Structured: exact/keyword match from task/error/repo stores
+        2. Vector: semantic similarity from FAISS index
         """
         sections: list[str] = []
 
-        # 1. Similar past tasks
+        # ── Structured Memory (keyword match) ────────────
+
+        # 1a. Similar past tasks (structured)
         similar_tasks = self.query_task_memory(task, limit=3)
         if similar_tasks:
             lines = []
             for t in similar_tasks:
                 status = "success" if t.success else "failed"
-                # Truncate prompt and result for context
                 prompt_short = t.prompt[:80]
                 result_short = t.result[:100]
                 tools = ", ".join(t.tool_trace[:5]) if t.tool_trace else "none"
@@ -198,9 +242,9 @@ class MemoryManager:
                     f"- [{status}] \"{prompt_short}\" → "
                     f"tools: {tools}, result: {result_short}"
                 )
-            sections.append("### Similar past tasks:\n" + "\n".join(lines))
+            sections.append("### Similar past tasks (keyword match):\n" + "\n".join(lines))
 
-        # 2. Previous failures (only if task looks like it might hit similar errors)
+        # 1b. Previous failures (structured)
         keywords = _extract_keywords(task)
         past_errors = self.query_error_memory(keywords=keywords, limit=3)
         if past_errors:
@@ -208,9 +252,9 @@ class MemoryManager:
             for e in past_errors:
                 fix = f" → fix: {e.fix_strategy[:80]}" if e.fix_strategy else ""
                 lines.append(f"- [{e.error_type}] {e.context[:100]}{fix}")
-            sections.append("### Previous failures to avoid:\n" + "\n".join(lines))
+            sections.append("### Previous failures (keyword match):\n" + "\n".join(lines))
 
-        # 3. Repo context
+        # 1c. Repo context (structured)
         if workspace_id:
             repo_mem = self.query_repo_memory(workspace_id)
             if repo_mem:
@@ -221,6 +265,28 @@ class MemoryManager:
                     f"- Files: {repo_mem.file_summary[:150]}"
                 )
 
+        # ── Vector Memory (semantic match) ───────────────
+
+        # 2a. Similar past solutions (vector)
+        similar_vec = self._vector.search_memory(task, top_k=3, memory_type="task")
+        if similar_vec:
+            lines = []
+            for entry, score in similar_vec:
+                if score > 0.3:  # relevance threshold
+                    lines.append(f"- (sim={score:.2f}) {entry.text[:150]}")
+            if lines:
+                sections.append("### Similar past solutions (semantic match):\n" + "\n".join(lines))
+
+        # 2b. Similar errors (vector)
+        error_vec = self._vector.search_memory(task, top_k=2, memory_type="error")
+        if error_vec:
+            lines = []
+            for entry, score in error_vec:
+                if score > 0.3:
+                    lines.append(f"- (sim={score:.2f}) {entry.text[:150]}")
+            if lines:
+                sections.append("### Related errors (semantic match):\n" + "\n".join(lines))
+
         if not sections:
             return ""
 
@@ -229,17 +295,26 @@ class MemoryManager:
     # ── Stats ────────────────────────────────────────────
 
     def stats(self) -> dict:
-        return self._store.stats()
+        """Memory statistics including vector store."""
+        structured = self._store.stats()
+        return {
+            **structured,
+            "vector_count": self._vector.count(),
+        }
 
 
 # ── Singleton ──────────────────────────────────────────
 
-_memory_manager: Optional[MemoryManager] = None
+_memory_manager: Optional[HybridMemoryManager] = None
 
 
-def get_memory_manager() -> MemoryManager:
+def get_memory_manager() -> HybridMemoryManager:
     """Get the global memory manager instance."""
     global _memory_manager
     if _memory_manager is None:
-        _memory_manager = MemoryManager()
+        _memory_manager = HybridMemoryManager()
     return _memory_manager
+
+
+# Backward compat alias
+MemoryManager = HybridMemoryManager

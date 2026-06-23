@@ -9,6 +9,7 @@ from typing import Any, Optional
 from app.agent.budget import ToolBudget
 from app.agent.prompts import SYSTEM_PROMPT
 from app.memory.memory_manager import get_memory_manager
+from app.router.intent_router import get_intent_router, INTENT_REPO, INTENT_SECURITY
 from app.security.tool_guardrail import ToolGuardrail
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
@@ -17,24 +18,6 @@ from app.workspace.indexer import IndexBuilder, WorkspaceIndex
 from app.workspace.resolver import SmartFileResolver
 
 logger = logging.getLogger(__name__)
-
-# ── REPO_MODE 关键词 ──────────────────────────────────────
-_REPO_MODE_KEYWORDS = [
-    "项目做什么", "做什么的", "整体架构", "系统架构",
-    "系统流程", "执行流程", "怎么运行", "如何运行",
-    "项目结构", "代码结构", "模块职责", "分析项目",
-    "项目概览", "代码分析", "架构分析",
-    "repo", "architecture", "overview", "analyze project",
-]
-
-
-def _detect_mode(task: str) -> str:
-    """检测用户意图，返回 'repo' 或 'react'。"""
-    task_lower = task.lower()
-    for kw in _REPO_MODE_KEYWORDS:
-        if kw in task_lower:
-            return "repo"
-    return "react"
 
 
 # 检测文本中伪造的工具调用
@@ -151,9 +134,22 @@ class ReActAgent:
                 security_warnings=self._guardrail.warnings,
             )
 
-        # 模式检测：REPO_MODE vs REACT_MODE
-        mode = _detect_mode(task)
-        if mode == "repo":
+        # D33: Hybrid intent routing (rule → embedding → LLM fallback)
+        intent_result = get_intent_router().route(task)
+
+        # SECURITY intent detected by router → block early
+        if intent_result.intent == INTENT_SECURITY:
+            self._guardrail.warnings.append({
+                "type": "intent_security",
+                "detail": f"Router detected security intent: {intent_result.details}",
+            })
+            return AgentRunResult(
+                answer=f"安全拦截: 检测到可疑意图 ({intent_result.layer} layer)",
+                security_warnings=self._guardrail.warnings,
+            )
+
+        # REPO intent → repo analysis mode
+        if intent_result.intent == INTENT_REPO:
             return await self._run_repo_mode(task)
 
         # 构建 Workspace 索引并注入上下文

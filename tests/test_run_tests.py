@@ -33,7 +33,7 @@ class TestRunTestsSuccess:
     def test_run_all_tests(self):
         """运行 workspace 内所有测试 — 验证 runner 正常工作。"""
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE)
         )
         data = json.loads(result)
@@ -43,7 +43,7 @@ class TestRunTestsSuccess:
 
     def test_run_specific_test_file(self):
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="tests/test_health.py")
         )
         data = json.loads(result)
@@ -67,7 +67,7 @@ class TestRunTestsFailure:
         )
         try:
             tool = _make_tool()
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 tool.run(workspace_root=WORKSPACE, target="test_must_fail.py")
             )
             data = json.loads(result)
@@ -94,7 +94,7 @@ class TestRunTestsTimeout:
             encoding="utf-8",
         )
         try:
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 tool.run(workspace_root=WORKSPACE, target="test_infinite.py")
             )
             # timeout returns a plain error string, not JSON
@@ -111,7 +111,7 @@ class TestRunTestsTimeout:
 class TestRunTestsInvalid:
     def test_traversal_blocked(self):
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="../../etc/passwd")
         )
         assert "错误" in result
@@ -119,7 +119,7 @@ class TestRunTestsInvalid:
 
     def test_nonexistent_workspace(self):
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root="/nonexistent/path")
         )
         assert "错误" in result
@@ -134,7 +134,7 @@ class TestRunTestsInvalid:
 class TestRunTestsOutput:
     def test_output_is_json(self):
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="tests/test_health.py")
         )
         data = json.loads(result)
@@ -147,7 +147,7 @@ class TestRunTestsOutput:
     def test_output_max_size(self):
         """验证 stdout 不超过 50KB。"""
         tool = _make_tool()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             tool.run(workspace_root=WORKSPACE)
         )
         assert len(result.encode("utf-8")) <= 50 * 1024 + 1024  # 允许 JSON 包装开销
@@ -163,7 +163,7 @@ class TestRunTestsRegistry:
         reg = ToolRegistry()
         reg.register(RunTestsTool())
         tc = ToolCall(name="run_tests", arguments={"target": "tests/test_health.py"})
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             reg.execute(tc, WORKSPACE)
         )
         assert result.success is True

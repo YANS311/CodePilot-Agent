@@ -1,0 +1,172 @@
+{
+  "version": "1.0",
+  "description": "Real-world repo bug detection & fix benchmark",
+  "repos": ["todo_api", "calculator_pkg", "config_parser"],
+  "tasks": [
+    {
+      "id": "todo-01",
+      "repo": "todo_api",
+      "difficulty": "easy",
+      "title": "Fix complete() persistence bug",
+      "description": "In app/service.py, the complete() method modifies the todo object but does not persist the change back to storage. Add the missing storage.save() call so completed todos are actually saved.",
+      "files_to_modify": ["app/service.py"],
+      "test_command": "cd repos/todo_api && python -m pytest tests/test_todo_api.py::TestComplete::test_complete_persists -v",
+      "expected_test": "tests/test_todo_api.py::TestComplete::test_complete_persists",
+      "hints": ["Look at how create() uses self._storage.add()", "complete() modifies todo.done but never calls save()"]
+    },
+    {
+      "id": "todo-02",
+      "repo": "todo_api",
+      "difficulty": "easy",
+      "title": "Fix list_pending() inverted filter",
+      "description": "In app/service.py, list_pending() returns completed todos instead of pending ones. Fix the filter condition.",
+      "files_to_modify": ["app/service.py"],
+      "test_command": "cd repos/todo_api && python -m pytest tests/test_todo_api.py::TestListPending -v",
+      "expected_test": "tests/test_todo_api.py::TestListPending::test_list_pending_excludes_completed",
+      "hints": ["The condition 'if t.done' filters for completed items", "Pending means 'not done'"]
+    },
+    {
+      "id": "todo-03",
+      "repo": "todo_api",
+      "difficulty": "easy",
+      "title": "Fix delete() return value",
+      "description": "In app/service.py, delete() returns the inverted result (not result) instead of the actual result. Fix the return value.",
+      "files_to_modify": ["app/service.py"],
+      "test_command": "cd repos/todo_api && python -m pytest tests/test_todo_api.py::TestDelete -v",
+      "expected_test": "tests/test_todo_api.py::TestDelete::test_delete_returns_true",
+      "hints": ["Look at 'return not result' — the 'not' inverts the boolean", "delete() should return True on success"]
+    },
+    {
+      "id": "calc-01",
+      "repo": "calculator_pkg",
+      "difficulty": "easy",
+      "title": "Fix subtract() implementation",
+      "description": "In calculator/core.py, subtract() is implemented as addition (returns a + b). Fix it to return the actual difference (a - b).",
+      "files_to_modify": ["calculator/core.py"],
+      "test_command": "cd repos/calculator_pkg && python -m pytest tests/test_core.py::TestSubtract -v",
+      "expected_test": "tests/test_core.py::TestSubtract::test_subtract_basic",
+      "hints": ["The function body is 'return a + b' — the operator is wrong", "Subtraction should use the minus operator"]
+    },
+    {
+      "id": "calc-02",
+      "repo": "calculator_pkg",
+      "difficulty": "easy",
+      "title": "Fix divide() zero-division handling",
+      "description": "In calculator/core.py, divide() raises a raw ZeroDivisionError when dividing by zero. Add a guard to return a clear error message or float('inf').",
+      "files_to_modify": ["calculator/core.py"],
+      "test_command": "cd repos/calculator_pkg && python -m pytest tests/test_core.py::TestDivide -v",
+      "expected_test": "tests/test_core.py::TestDivide::test_divide_by_zero",
+      "hints": ["Check if b == 0 before dividing", "Return float('inf') or raise ValueError with a message"]
+    },
+    {
+      "id": "calc-03",
+      "repo": "calculator_pkg",
+      "difficulty": "easy",
+      "title": "Fix factorial() off-by-one",
+      "description": "In calculator/advanced.py, factorial() has an off-by-one error: range(1, n) should be range(1, n + 1). Fix the loop range.",
+      "files_to_modify": ["calculator/advanced.py"],
+      "test_command": "cd repos/calculator_pkg && python -m pytest tests/test_advanced.py::TestFactorial -v",
+      "expected_test": "tests/test_advanced.py::TestFactorial::test_factorial_5",
+      "hints": ["range(1, n) iterates from 1 to n-1", "factorial(n) should multiply 1 through n"]
+    },
+    {
+      "id": "calc-04",
+      "repo": "calculator_pkg",
+      "difficulty": "medium",
+      "title": "Fix lcm() negative number handling",
+      "description": "In calculator/advanced.py, lcm() does not take absolute values, so lcm(-4, 6) returns -12 instead of 12. Add abs() to ensure the result is always non-negative.",
+      "files_to_modify": ["calculator/advanced.py"],
+      "test_command": "cd repos/calculator_pkg && python -m pytest tests/test_advanced.py::TestLcm -v",
+      "expected_test": "tests/test_advanced.py::TestLcm::test_lcm_negative",
+      "hints": ["The LCM is always non-negative by definition", "Apply abs() to both result and val before computing"]
+    },
+    {
+      "id": "cfg-01",
+      "repo": "config_parser",
+      "difficulty": "medium",
+      "title": "Fix loader missing file check",
+      "description": "In cfgparser/loader.py, load_config() raises a raw FileNotFoundError when the file doesn't exist. Add a check to return a structured error dict {'error': 'File not found: ...'} instead.",
+      "files_to_modify": ["cfgparser/loader.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/test_loader.py::TestLoadConfig::test_load_missing_file -v",
+      "expected_test": "tests/test_loader.py::TestLoadConfig::test_load_missing_file",
+      "hints": ["Use filepath.exists() before reading", "Return {'error': f'File not found: {path}'}"]
+    },
+    {
+      "id": "cfg-02",
+      "repo": "config_parser",
+      "difficulty": "medium",
+      "title": "Fix loader JSON parse error handling",
+      "description": "In cfgparser/loader.py, load_config() raises a raw JSONDecodeError for malformed JSON. Wrap json.loads() in a try/except and return {'error': 'Invalid JSON: ...'}.",
+      "files_to_modify": ["cfgparser/loader.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/test_loader.py::TestLoadConfig::test_load_malformed_json -v",
+      "expected_test": "tests/test_loader.py::TestLoadConfig::test_load_malformed_json",
+      "hints": ["Catch json.JSONDecodeError", "Return {'error': f'Invalid JSON: {e}'}"]
+    },
+    {
+      "id": "cfg-03",
+      "repo": "config_parser",
+      "difficulty": "medium",
+      "title": "Fix validator dead code in required-field check",
+      "description": "In cfgparser/validator.py, validate_config() has dead code: 'if False and field not in config' never executes. Remove the 'False and' so the required-field check actually runs.",
+      "files_to_modify": ["cfgparser/validator.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/test_validator.py::TestValidateConfig -v",
+      "expected_test": "tests/test_validator.py::TestValidateConfig::test_missing_required_fields",
+      "hints": ["The 'False and' makes the condition always False", "Simply use 'if field not in config:'"]
+    },
+    {
+      "id": "cfg-04",
+      "repo": "config_parser",
+      "difficulty": "medium",
+      "title": "Fix type_check missing int validation",
+      "description": "In cfgparser/validator.py, type_check() only validates 'str' fields. Add an elif branch for 'int' so integer type checking works.",
+      "files_to_modify": ["cfgparser/validator.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/test_validator.py::TestTypeCheck::test_wrong_type_int -v",
+      "expected_test": "tests/test_validator.py::TestTypeCheck::test_wrong_type_int",
+      "hints": ["Add: elif expected_type == 'int' and not isinstance(value, int):", "Follow the same pattern as the str check"]
+    },
+    {
+      "id": "cfg-05",
+      "repo": "config_parser",
+      "difficulty": "medium",
+      "title": "Fix env override only processing first key",
+      "description": "In cfgparser/env.py, apply_env_overrides() only processes the first key of the config using next(iter(config)). Change it to iterate over all keys so every config field can be overridden from environment variables.",
+      "files_to_modify": ["cfgparser/env.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/test_env.py -v",
+      "expected_test": "tests/test_env.py::TestApplyEnvOverrides::test_override_all_keys",
+      "hints": ["Replace the single-key logic with a for loop over config.keys()", "For each key, check os.environ.get(f'{prefix}_{key}'.upper())"]
+    },
+    {
+      "id": "todo-all",
+      "repo": "todo_api",
+      "difficulty": "hard",
+      "title": "Fix all 3 bugs in todo_api",
+      "description": "Fix all three bugs in app/service.py: (1) complete() missing storage.save(), (2) list_pending() inverted condition, (3) delete() returns not result.",
+      "files_to_modify": ["app/service.py"],
+      "test_command": "cd repos/todo_api && python -m pytest tests/test_todo_api.py -v",
+      "expected_test": "tests/test_todo_api.py",
+      "hints": ["Fix complete() to call self._storage.save(todo)", "Change 'if t.done' to 'if not t.done' in list_pending()", "Change 'return not result' to 'return result' in delete()"]
+    },
+    {
+      "id": "calc-all",
+      "repo": "calculator_pkg",
+      "difficulty": "hard",
+      "title": "Fix all 4 bugs in calculator_pkg",
+      "description": "Fix all four bugs: (1) subtract() uses + instead of -, (2) divide() missing zero check, (3) factorial() off-by-one in range, (4) lcm() missing abs() for negatives.",
+      "files_to_modify": ["calculator/core.py", "calculator/advanced.py"],
+      "test_command": "cd repos/calculator_pkg && python -m pytest tests/ -v",
+      "expected_test": "tests/",
+      "hints": ["subtract: change 'a + b' to 'a - b'", "divide: add 'if b == 0' guard", "factorial: change range(1, n) to range(1, n + 1)", "lcm: wrap operands in abs()"]
+    },
+    {
+      "id": "cfg-all",
+      "repo": "config_parser",
+      "difficulty": "hard",
+      "title": "Fix all 5 bugs in config_parser",
+      "description": "Fix all five bugs: (1) loader missing file check, (2) loader no JSON error handling, (3) validator dead code in required check, (4) type_check missing int, (5) env override only first key.",
+      "files_to_modify": ["cfgparser/loader.py", "cfgparser/validator.py", "cfgparser/env.py"],
+      "test_command": "cd repos/config_parser && python -m pytest tests/ -v",
+      "expected_test": "tests/",
+      "hints": ["loader: add exists() check + try/except JSONDecodeError", "validator: remove 'False and' + add int branch", "env: use for loop instead of next(iter())"]
+    }
+  ]
+}

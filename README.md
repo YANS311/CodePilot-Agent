@@ -1,39 +1,17 @@
 # CodePilot Agent
 
-> **CodePilot is a Python-based AI Coding Agent system built with FastAPI and LLM tool-calling architecture.**
+> **Evidence-grounded AI Coding Agent System**
 
-A full-stack Agent platform that autonomously fixes bugs, analyzes codebases, and provides evidence-backed explanations — built from scratch with ReAct loop, evaluation framework, security guardrails, and explainability layer.
+## System Overview
 
-## 1-Command Run
+CodePilot is an evidence-grounded coding agent built from scratch with FastAPI + LLM tool-calling. It searches code, locates bugs, fixes issues, runs tests, and explains every decision with code-level evidence.
 
-```bash
-# Clone and start
-git clone https://github.com/YANS311/CodePilot-Agent.git
-cd CodePilot-Agent
-cp .env.example .env    # Add your API key
-docker-compose up
-# Open http://localhost:8000
-```
-
-## Live Demo Flow
-
-| Step | Action | Result |
-|------|--------|--------|
-| 1 | Click **Bug Fix** | Agent auto-locates → reads → fixes → tests → verifies |
-| 2 | Click **Repo Analysis** | AST evidence extraction → structured report → confidence 85% |
-| 3 | Click **Security** | Prompt injection detected → blocked by guardrails |
-
-## Tech Stack
-
-| Category | Technology |
-|----------|-----------|
-| **Language** | Python 3.9+ |
-| **Backend** | FastAPI + Pydantic Settings |
-| **LLM** | OpenAI / DeepSeek compatible API (Tool Calling / Function Calling) |
-| **Execution** | Local subprocess / Docker sandbox (`--read-only --network none`) |
-| **Repo Indexing** | RAG-like Workspace Intelligence (file tree + AST summaries) |
-| **Eval** | Custom 30-task benchmark with 7 advanced metrics |
-| **Security** | Prompt injection detection + tool guardrail |
+| Layer | What it does |
+|-------|-------------|
+| **Agent** | ReAct loop (Think → Act → Observe) + Mode Router for intent detection |
+| **Tool** | 6 tools: search, read, write, run_tests, git_diff, git_status |
+| **Evaluation** | 30-task benchmark + 15 real-world + 10 stress test tasks |
+| **Explainability** | AST evidence extraction with confidence scoring |
 
 ## Architecture
 
@@ -62,126 +40,88 @@ docker-compose up
          ▼               ▼               ▼
    ┌──────────┐   ┌──────────┐   ┌──────────┐
    │Evaluation│   │ Security │   │Evidence  │
-   │30 tasks  │   │Guardrails│   │AST +     │
+   │30+15 tasks│  │Guardrails│   │AST +     │
    │TSR 90%   │   │100% block│   │Confidence│
    └──────────┘   └──────────┘   └──────────┘
 ```
 
-## Project Description
-
-### Layer 1 — Resume Screening
-
-> Python + FastAPI 后端服务 | 基于 LLM 的 Agent 系统 | 支持代码修复 / 文件操作 / 自动测试
-
-- Python backend service built with FastAPI
-- LLM-powered Agent system with Tool Calling architecture
-- Automated code fix, file operations, and test execution
-
-### Layer 2 — Technical Capability
-
-> ReAct Agent Loop | Tool Registry | Evaluation System | Security Guardrails | Evidence-based Repo Analysis
-
-- **ReAct Agent**: Think → Act → Observe loop with 6 tools and Mode Router
-- **Evaluation**: 30-task benchmark, 7 advanced metrics, automatic error taxonomy. **TSR: 90%**
-- **Security**: Prompt injection detection, tool guardrail, completion chain validation. **Block Rate: 100%**
-- **Explainability**: AST-based evidence extraction with confidence scoring (0.0~1.0)
-
-## Features
-
-- **ReAct Agent** — Think → Act → Observe loop with 6 tools (search, read, write, test, diff, status). Mode Router auto-detects intent: code tasks vs project analysis.
-- **Evaluation Framework** — 30-task benchmark (Easy/Medium/Hard), 7 advanced metrics, automatic error taxonomy. **TSR: 90%**.
-- **Security Guardrails** — Prompt injection detection, tool execution guardrail, completion chain validation. **Block Rate: 100%**.
-- **Explainability** — AST-based evidence extraction. Every conclusion backed by file → function → line number. **Confidence scoring (0.0~1.0)**.
-
 ## Demo
 
-3 built-in demos — click a button to run:
+One unified flow: **Upload → Index → Agent → Tool → Execute → Evidence → Result**
 
-| Demo | What it shows |
-|------|---------------|
-| **Bug Fix** | Auto-locate file → read code → fix bug → run tests → verify |
-| **Repo Analysis** | Scan workspace → extract evidence → structured report with confidence |
-| **Security** | Prompt injection detected → blocked by guardrails |
+| Step | What happens |
+|------|-------------|
+| 1 | Upload a buggy Python project |
+| 2 | Agent auto-builds WorkspaceIndex (file tree + AST summaries) |
+| 3 | Click **Bug Fix** — Agent locates, reads, fixes, tests, verifies |
+| 4 | Unified output: Summary + Trace + Tools + Metrics + Evidence + Confidence |
 
 ```bash
 # Quick start
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-# Open http://localhost:8000
+git clone https://github.com/YANS311/CodePilot-Agent.git
+cd CodePilot-Agent
+cp .env.example .env    # Add your API key
+docker-compose up       # Open http://localhost:8000
 ```
 
-## Evaluation
+## Metrics
 
-30-task benchmark across three difficulty tiers:
+| Metric | Value | What It Proves |
+|--------|------:|----------------|
+| Task Success Rate (Normal) | **90%** | Core capability on controlled tasks |
+| Task Success Rate (Stress) | Measured | Real-world boundary under complexity |
+| Recovery Rate | Measured | Ability to recover from failures |
+| Security Block Rate | **100%** | Attack inputs never reach LLM |
+| Tool Efficiency | Measured | Tool calls per successful task |
 
-| Difficulty | Tasks | Pass Rate |
-|:-----------|------:|----------:|
-| Easy       |    10 | **100%**  |
-| Medium     |    12 | **92%**   |
-| Hard       |     8 | **75%**   |
-| **Total**  | **30**| **90%**   |
+> All metrics are based on controlled evaluation + real-world benchmark.
 
-| Metric | Value |
-|--------|------:|
-| Task Success Rate | 90.0% |
-| Test Pass Rate | 96.6% |
-| Tool Call Validity | ~98% |
-| Verification Completion | ~85% |
-| Code Change Validity | 93.3% |
-| Planning Efficiency | 6.9 |
-| Security Block Rate | 100% |
+| Benchmark | Tasks | Scope |
+|-----------|------:|-------|
+| Synthetic (Easy/Medium/Hard) | 30 | Bug fix / enhancement |
+| Real-World (3 repos, seeded bugs) | 15 | Cross-file, hidden bugs |
+| Stress Test (multi-file, recovery) | 10 | Complexity boundary |
 
 ## Security
 
 3-layer defense:
 
-1. **Prompt Injection Detection** — Blocks role-play, instruction override, jailbreak attempts
-2. **Tool Guardrail** — Prevents dangerous operations (file deletion, network requests, path traversal)
-3. **Completion Chain** — Validates that claimed fixes were actually executed via tool calls
+1. **Prompt Injection Detection** — blocks role-play, instruction override, jailbreak
+2. **Tool Guardrail** — prevents dangerous operations (file deletion, path traversal)
+3. **Completion Chain** — validates claimed fixes were actually executed via tool calls
 
 ## Explainability
 
-Every analysis conclusion includes evidence:
+Every analysis conclusion backed by code evidence:
 
 ```
-Claim: Agent core loop implemented in react_agent.py
-- File: app/agent/react_agent.py, Symbol: ReActAgent, Lines: 112-308
-- File: app/agent/react_agent.py, Symbol: run, Lines: 140-308
+Claim: Bug in subtract function
+- File: app/calc.py, Symbol: subtract, Lines: 15-20
 
 Confidence: 85%
 ```
 
-## Quick Start
+## Tech Stack
 
-```bash
-# Option 1: Docker (recommended)
-docker-compose up
-# Open http://localhost:8000
-
-# Option 2: Local
-pip install -r requirements.txt
-cp .env.example .env    # Add your API key
-uvicorn app.main:app --reload
-
-# Run all 3 demos from CLI
-python scripts/demo_runner.py
-```
+| Category | Technology |
+|----------|-----------|
+| Language | Python 3.9+ |
+| Backend | FastAPI + Pydantic |
+| LLM | OpenAI / DeepSeek compatible API |
+| Execution | Local subprocess / Docker sandbox |
+| Indexing | Workspace Intelligence (file tree + AST) |
+| Eval | Custom benchmark with 7 advanced metrics |
+| Security | Prompt injection + tool guardrail |
 
 ## Run Tests
 
 ```bash
-pytest tests/ -v    # 337 unit tests
+pytest tests/ -v    # 416 unit tests
 ```
 
-## Keywords for Recruitment
+## Keywords
 
-> **Python / FastAPI / LLM / Agent / RAG / Docker / Tool Calling / Function Calling / Evaluation / Security / ReAct / Prompt Engineering**
-
-## Docs
-
-- [Architecture Overview](docs/architecture_overview.md) — Complete system diagram
-- [Evaluation](docs/evaluation.md) — Full metrics breakdown
-- [Error Taxonomy](docs/error-taxonomy.md) — 7 error types
+> **Python / FastAPI / LLM / Agent / RAG / Docker / Tool Calling / Evaluation / Security / ReAct / Explainability**
 
 ## License
 

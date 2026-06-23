@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 _REPO_ANALYSIS_PROMPT = """你是一个高级代码分析师。请分析以下 Python 项目的结构和架构。
 
+## 关键规则（必须遵守）
+
+1. **证据绑定**：每个结论（Project Overview、Architecture Flow、Core Modules 中的每一行）都必须在 Evidence 部分引用具体的 File + Symbol + Lines。没有证据支撑的结论不允许写入分析结果。
+2. **禁止推测**：只能基于文件列表和证据索引中的实际内容做分析。如果证据索引中没有某个函数/类的信息，不要猜测它的实现细节。
+3. **未知声明**：如果某个模块的行为无法从提供的信息中确认，在 Potential Issues 中声明"无法确认 [模块名] 的具体行为"，而不是编造描述。
+4. **行号准确**：引用的行号必须来自证据索引中的实际值，不要编造行号。
+
 项目文件列表:
 {file_summaries}
 
@@ -27,29 +34,35 @@ _REPO_ANALYSIS_PROMPT = """你是一个高级代码分析师。请分析以下 P
 请严格按以下格式输出分析结果（使用 Markdown）:
 
 ## Project Overview
-(项目类型: AI System / Web App / Library / CLI Tool / Data Pipeline，然后一句话概述项目功能)
+(项目类型: AI System / Web App / Library / CLI Tool / Data Pipeline，然后一句话概述项目功能。概述必须基于文件列表中实际存在的模块推断，不要凭空描述项目功能。)
 
 ## Architecture Flow
-(执行流程，用数字编号，描述请求/数据如何在模块间流动)
+(执行流程，用数字编号，描述请求/数据如何在模块间流动。每一步都必须对应 Evidence 中的具体函数调用链。)
 
 ## Core Modules
 | Module | Path | Role |
 |--------|------|------|
-(列出每个核心模块: 名称 + 路径 + 一句话职责)
+(列出每个核心模块: 名称 + 路径 + 一句话职责。只列出文件列表中实际存在的 .py 文件，不要添加文件列表中没有的模块。)
 
 ## Evidence
-(为每个核心结论列出证据。使用以下格式，每个 Claim 独占一段:)
+(为每个核心结论列出证据。这是分析结果的关键部分，必须覆盖前面所有章节中的每个事实性断言。)
+
+每个 Claim 独占一段，格式如下:
 Claim: [结论描述]
 - File: [文件路径], Symbol: [函数/类名], Lines: [行号范围]
 - File: [文件路径], Symbol: [函数/类名], Lines: [行号范围]
 
-(如果证据索引中有对应的函数/类，请引用实际的文件路径、符号名和行号)
+要求：
+- Claim 的描述必须与前面章节中的某个结论对应
+- File 路径必须来自文件列表中的实际路径
+- Symbol 和 Lines 必须来自证据索引中的实际条目
+- 如果某个结论无法找到对应证据，不要在 Evidence 中列出该结论
 
 ## Potential Issues
-(列出潜在问题/风险点，用 bullet list)
+(列出潜在问题/风险点，用 bullet list。只列出基于实际代码证据可以推断的问题，不要猜测不存在的问题。)
 
 ## Suggested Improvements
-(列出改进建议，用 bullet list)
+(列出改进建议，用 bullet list。建议必须基于 Potential Issues 中列出的实际问题，不要提出与代码无关的通用建议。)
 """
 
 

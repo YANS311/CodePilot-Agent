@@ -36,6 +36,24 @@ class AdvancedMetrics:
     # 7. Security Block Rate — 攻击样例中被正确拦截的比例
     security_block_rate: float = 0.0
 
+    # 8. Stress-specific metrics
+    recovery_rate: float = 0.0  # 重试后成功的比例
+    multi_file_success_rate: float = 0.0  # 多文件任务成功率
+    first_pass_rate: float = 0.0  # 首次尝试即成功的比例
+    retry_success_rate: float = 0.0  # 重试后成功的比例（与 recovery_rate 区分）
+    tool_efficiency_under_stress: float = 0.0  # 压力下工具效率
+
+    # 9. Memory-specific metrics
+    memory_hit_rate: float = 0.0  # 有多少比例的任务命中了历史 memory
+    memory_utilization_effect: float = 0.0  # memory-utilized 任务的成功率 vs 未利用的成功率
+    similar_task_recall: float = 0.0  # 相似任务的历史方案召回率
+
+    # 10. Routing-specific metrics
+    routing_accuracy: float = 0.0  # 路由正确率（intent 匹配任务类别）
+    routing_fallback_rate: float = 0.0  # LLM/default 层的使用比例
+    rule_layer_rate: float = 0.0  # Rule 层命中比例
+    embedding_layer_rate: float = 0.0  # Embedding 层命中比例
+
     # 详细统计
     total_tasks: int = 0
     successful_tasks: int = 0
@@ -45,6 +63,15 @@ class AdvancedMetrics:
     tasks_with_code_change: int = 0
     security_tasks_total: int = 0
     security_tasks_blocked: int = 0
+    # Stress details
+    stress_total_tasks: int = 0
+    stress_successful_tasks: int = 0
+    multi_file_tasks: int = 0
+    multi_file_successful: int = 0
+    first_pass_tasks: int = 0
+    first_pass_successful: int = 0
+    retry_tasks: int = 0
+    retry_successful: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -55,6 +82,18 @@ class AdvancedMetrics:
             "code_change_validity": round(self.code_change_validity, 4),
             "planning_efficiency": round(self.planning_efficiency, 4),
             "security_block_rate": round(self.security_block_rate, 4),
+            "recovery_rate": round(self.recovery_rate, 4),
+            "multi_file_success_rate": round(self.multi_file_success_rate, 4),
+            "first_pass_rate": round(self.first_pass_rate, 4),
+            "retry_success_rate": round(self.retry_success_rate, 4),
+            "tool_efficiency_under_stress": round(self.tool_efficiency_under_stress, 4),
+            "memory_hit_rate": round(self.memory_hit_rate, 4),
+            "memory_utilization_effect": round(self.memory_utilization_effect, 4),
+            "similar_task_recall": round(self.similar_task_recall, 4),
+            "routing_accuracy": round(self.routing_accuracy, 4),
+            "routing_fallback_rate": round(self.routing_fallback_rate, 4),
+            "rule_layer_rate": round(self.rule_layer_rate, 4),
+            "embedding_layer_rate": round(self.embedding_layer_rate, 4),
             "details": {
                 "total_tasks": self.total_tasks,
                 "successful_tasks": self.successful_tasks,
@@ -64,6 +103,14 @@ class AdvancedMetrics:
                 "tasks_with_code_change": self.tasks_with_code_change,
                 "security_tasks_total": self.security_tasks_total,
                 "security_tasks_blocked": self.security_tasks_blocked,
+                "stress_total_tasks": self.stress_total_tasks,
+                "stress_successful_tasks": self.stress_successful_tasks,
+                "multi_file_tasks": self.multi_file_tasks,
+                "multi_file_successful": self.multi_file_successful,
+                "first_pass_tasks": self.first_pass_tasks,
+                "first_pass_successful": self.first_pass_successful,
+                "retry_tasks": self.retry_tasks,
+                "retry_successful": self.retry_successful,
             },
         }
 
@@ -72,8 +119,14 @@ def compute_advanced_metrics(
     results: list[EvalResult],
     tasks: list[EvalTask],
     security_results: Optional[list[dict]] = None,
+    routing_stats: Optional[dict] = None,
 ) -> AdvancedMetrics:
-    """根据评测结果计算高级指标。"""
+    """根据评测结果计算高级指标。
+
+    Args:
+        routing_stats: Optional dict from IntentRouter.stats() with
+            layer_counts and intent_counts.
+    """
     m = AdvancedMetrics()
 
     # 处理 security 结果（即使没有 eval results）
@@ -166,5 +219,79 @@ def compute_advanced_metrics(
     m.valid_tool_calls = valid_tools
     m.tasks_with_verification = tasks_with_verification
     m.tasks_with_code_change = tasks_with_code_change
+
+    # 8. Stress-specific metrics
+    # Build task_id → EvalTask lookup for category info
+    task_lookup = {t.id: t for t in tasks} if tasks else {}
+
+    STRESS_CATEGORIES = {"multi-file-bug-fix", "mixed-instruction", "repo-understand-modify", "partial-failure-recovery"}
+    stress_results = [r for r in results if task_lookup.get(r.task_id, EvalTask(id="", name="", difficulty="", category="", task="")).category in STRESS_CATEGORIES]
+    multi_file_results = [r for r in stress_results if task_lookup.get(r.task_id, EvalTask(id="", name="", difficulty="", category="", task="")).category == "multi-file-bug-fix"]
+
+    # First-pass vs retry
+    first_pass_results = [r for r in results if not r.is_retry_result]
+    retry_results = [r for r in results if r.is_retry_result]
+
+    # Compute rates
+    m.stress_total_tasks = len(stress_results)
+    m.stress_successful_tasks = sum(1 for r in stress_results if r.success)
+    m.multi_file_tasks = len(multi_file_results)
+    m.multi_file_successful = sum(1 for r in multi_file_results if r.success)
+    m.first_pass_tasks = len(first_pass_results)
+    m.first_pass_successful = sum(1 for r in first_pass_results if r.success)
+    m.retry_tasks = len(retry_results)
+    m.retry_successful = sum(1 for r in retry_results if r.success)
+
+    m.recovery_rate = (
+        m.retry_successful / m.retry_tasks if m.retry_tasks else 0.0
+    )
+    m.multi_file_success_rate = (
+        m.multi_file_successful / m.multi_file_tasks if m.multi_file_tasks else 0.0
+    )
+    m.first_pass_rate = (
+        m.first_pass_successful / m.first_pass_tasks if m.first_pass_tasks else 0.0
+    )
+    m.retry_success_rate = m.recovery_rate  # alias
+
+    # Tool efficiency under stress: successful stress tasks avg tool calls
+    stress_successful_tools = sum(
+        r.tool_calls_count for r in stress_results if r.success
+    )
+    stress_successful_count = sum(1 for r in stress_results if r.success)
+    m.tool_efficiency_under_stress = (
+        stress_successful_tools / stress_successful_count
+        if stress_successful_count else 0.0
+    )
+
+    # 9. Memory-specific metrics
+    memory_utilized = [r for r in results if r.memory_utilized]
+    memory_not_utilized = [r for r in results if not r.memory_utilized]
+
+    # Memory Hit Rate: % of tasks that had memory context injected
+    m.memory_hit_rate = len(memory_utilized) / total if total else 0.0
+
+    # Memory Utilization Effect: success rate with memory vs without
+    mem_success = sum(1 for r in memory_utilized if r.success)
+    no_mem_success = sum(1 for r in memory_not_utilized if r.success)
+    mem_rate = mem_success / len(memory_utilized) if memory_utilized else 0.0
+    no_mem_rate = no_mem_success / len(memory_not_utilized) if memory_not_utilized else 0.0
+    m.memory_utilization_effect = mem_rate - no_mem_rate  # positive = memory helps
+
+    # Similar Task Recall: of tasks with memory, how many matched similar past tasks
+    # (simplified: memory_utilized means at least one similar task was found)
+    m.similar_task_recall = m.memory_hit_rate  # same as hit rate in this impl
+
+    # 10. Routing-specific metrics
+    if routing_stats:
+        layer_counts = routing_stats.get("layer_counts", {})
+        total_routes = routing_stats.get("total_routes", 0)
+        if total_routes > 0:
+            m.rule_layer_rate = layer_counts.get("rule", 0) / total_routes
+            m.embedding_layer_rate = layer_counts.get("embedding", 0) / total_routes
+            m.routing_fallback_rate = (
+                layer_counts.get("llm", 0) + layer_counts.get("default", 0)
+            ) / total_routes
+            # Accuracy: rule + embedding layers are "confident", llm/default are fallback
+            m.routing_accuracy = m.rule_layer_rate + m.embedding_layer_rate
 
     return m

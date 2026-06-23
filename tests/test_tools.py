@@ -64,9 +64,7 @@ class TestRegistry:
     def test_execute_unknown_tool(self):
         reg = ToolRegistry()
         tc = ToolCall(name="no_such_tool", arguments={})
-        result = asyncio.get_event_loop().run_until_complete(
-            reg.execute(tc, WORKSPACE)
-        )
+        result = asyncio.run(reg.execute(tc, WORKSPACE))
         assert result.success is False
         assert "未知工具" in result.output
 
@@ -81,28 +79,28 @@ class TestReadFile:
         self.tool = ReadFileTool()
 
     def test_read_existing_file(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, path="examples/buggy_calculator.py")
         )
         assert "Calculator" in result
         assert "class" in result
 
     def test_read_nonexistent_file(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, path="no_such_file.py")
         )
         assert "错误" in result
         assert "不存在" in result
 
     def test_path_traversal_blocked(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, path="../../etc/passwd")
         )
         assert "错误" in result
         assert "超出" in result
 
     def test_read_directory_returns_error(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, path="examples")
         )
         assert "错误" in result
@@ -119,20 +117,20 @@ class TestSearchCode:
         self.tool = SearchCodeTool()
 
     def test_search_finds_match(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, query="Calculator")
         )
         assert "buggy_calculator.py" in result
         assert "匹配" in result
 
     def test_search_no_match(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, query="xyzzy_not_exist_999")
         )
         assert "未找到" in result
 
     def test_search_with_file_pattern(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(
                 workspace_root=WORKSPACE,
                 query="Todo",
@@ -143,20 +141,20 @@ class TestSearchCode:
 
     def test_search_skips_git_dir(self):
         """搜索结果不应包含 .git 目录下的文件。"""
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, query="HEAD")
         )
         assert ".git" not in result
 
     def test_search_with_invalid_regex(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root=WORKSPACE, query="[invalid")
         )
         assert "错误" in result
         assert "正则" in result
 
     def test_search_nonexistent_workspace(self):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.tool.run(workspace_root="/nonexistent/path", query="test")
         )
         assert "错误" in result
