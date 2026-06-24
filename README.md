@@ -172,3 +172,6 @@ pytest tests/ -v    # 516 passed, 2 skipped
 ## License
 
 MIT
+
+---
+Built with Claude Code
