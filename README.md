@@ -145,6 +145,20 @@ Controlled benchmark results on internal test suites:
 
 > All metrics are controlled evaluation results, not production claims.
 
+## Real Usage Case Studies
+
+Self-tested execution traces documenting how the agent handles real coding tasks — including failures and recovery.
+
+| Case | Task Type | Tool Calls | Key Finding |
+|------|-----------|-----------|-------------|
+| [Bug Fix (Todo Service)](docs/real_usage_cases.md#case-1-python-bug-fix--todo-service-persistence-bug) | 3-bug fix | 10 | Guardrail caught no-write, forced re-execution |
+| [Repo Analysis](docs/real_usage_cases.md#case-2-repository-architecture-analysis) | Architecture | 0 | WorkspaceIndex sufficient, no file reads needed |
+| [Wrong File Recovery](docs/real_usage_cases.md#case-3-wrong-file-recovery--fibonacci-error-handling) | Error handling | 9 | SmartFileResolver disambiguated similar files |
+| [No-Code-Change Failure](docs/real_usage_cases.md#case-4-agent-no-code-change-failure) | Bug fix (failed) | 7 | Agent analyzed but didn't write; tracked via `wrote_file` |
+| [Security Guardrail](docs/real_usage_cases.md#case-5-security-guardrail--prompt-injection) | Injection attack | 0 | Blocked before LLM call, zero tool usage |
+
+> See [docs/real_usage_cases.md](docs/real_usage_cases.md) for full execution traces and system lessons.
+
 ## Tech Stack
 
 | Category | Technology |

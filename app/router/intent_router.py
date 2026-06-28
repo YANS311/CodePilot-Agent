@@ -143,7 +143,9 @@ def _get_embedding_router() -> EmbeddingRouter:
     """Lazy-init the embedding router singleton."""
     global _embedding_router
     if _embedding_router is None:
-        _embedding_router = EmbeddingRouter(threshold=0.35)
+        from app.core.config import settings
+        threshold = getattr(settings, "intent_embedding_threshold", 0.55)
+        _embedding_router = EmbeddingRouter(threshold=threshold)
     return _embedding_router
 
 
@@ -158,7 +160,7 @@ def _embedding_route(task: str) -> Optional[IntentResult]:
 
         # Require high confidence for embedding-based classification
         # to avoid false positives on ambiguous inputs
-        if result.score >= 0.55:
+        if result.score >= router.threshold:
             return IntentResult(
                 intent=result.intent,
                 confidence=min(result.score, 1.0),

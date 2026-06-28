@@ -15,6 +15,7 @@ from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.registry import ToolRegistry
 from app.workspace.indexer import IndexBuilder, WorkspaceIndex
+from app.workspace.index_cache import get_index_cache
 from app.workspace.resolver import SmartFileResolver
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,14 @@ _COMPLETION_PATTERNS = [
 ]
 
 MAX_TOOL_CALLS = 5
+
+# Patterns that indicate a code modification task
+_CODE_MODIFICATION_PATTERNS = [
+    re.compile(r"(fix|修复|debug|调试)", re.IGNORECASE),
+    re.compile(r"(write|编写|create|创建|add|添加)", re.IGNORECASE),
+    re.compile(r"(modify|修改|update|更新|refactor|重构)", re.IGNORECASE),
+    re.compile(r"(implement|实现|optimize|优化)", re.IGNORECASE),
+]
 
 
 def _format_tree(tree: dict, prefix: str = "") -> str:
@@ -94,6 +103,9 @@ class AgentRunResult:
     # D18: evidence-based fields
     evidence: list[dict] = field(default_factory=list)
     confidence: float = 0.0
+    # D34: write_file tracking
+    wrote_file: bool = False
+    no_code_change_reason: str = ""
 
 
 class ReActAgent:
@@ -218,6 +230,15 @@ class ReActAgent:
                     continue
 
                 messages.append({"role": "assistant", "content": answer})
+
+                # D34: Track write_file and warn if code modification task didn't write
+                has_write = self._has_write_file_in_trajectory(steps)
+                is_code_mod = self._is_code_modification_task(task)
+                no_reason = ""
+                if is_code_mod and not has_write:
+                    no_reason = "Agent did not call write_file for code modification task"
+                    logger.warning("Code modification task without write_file: %s", task[:80])
+
                 result = AgentRunResult(
                     answer=response.content or "",
                     tool_calls_count=tool_calls_count,
@@ -226,6 +247,8 @@ class ReActAgent:
                     thoughts=thoughts,
                     steps=steps,
                     security_warnings=self._guardrail.warnings,
+                    wrote_file=has_write,
+                    no_code_change_reason=no_reason,
                 )
                 self._write_task_memory(task, result, steps)
                 return result
@@ -302,6 +325,13 @@ class ReActAgent:
 
         # 达到上限：发一次不含 tools 的请求，让 LLM 基于已有信息总结
         final_response = await self._llm.chat(messages)
+        has_write = self._has_write_file_in_trajectory(steps)
+        is_code_mod = self._is_code_modification_task(task)
+        no_reason = ""
+        if is_code_mod and not has_write:
+            no_reason = "Agent exhausted tool calls without write_file"
+            logger.warning("Budget exhausted without write_file for code modification task")
+
         result = AgentRunResult(
             answer=final_response.content or "[达到最大工具调用次数，未能生成回答]",
             tool_calls_count=tool_calls_count,
@@ -310,6 +340,8 @@ class ReActAgent:
             thoughts=thoughts,
             steps=steps,
             security_warnings=self._guardrail.warnings,
+            wrote_file=has_write,
+            no_code_change_reason=no_reason,
         )
         self._write_task_memory(task, result, steps)
         return result
@@ -405,11 +437,14 @@ class ReActAgent:
     def _build_index_context(self) -> str:
         """构建 Workspace 索引上下文，注入到系统提示中。"""
         try:
-            builder = IndexBuilder()
-            self._index = builder.build(self._workspace_root)
+            cache = get_index_cache()
+            self._index = cache.get_or_build(self._workspace_root)
             self._resolver = SmartFileResolver(self._index)
-        except Exception:
-            logger.warning("Failed to build workspace index")
+        except Exception as exc:
+            logger.warning(
+                "Failed to build workspace index: [%s] %s",
+                type(exc).__name__, exc,
+            )
             return ""
 
         if not self._index.files:
@@ -455,6 +490,11 @@ class ReActAgent:
         """检查执行轨迹中是否调用过 write_file。"""
         return any(s.tool_name == "write_file" for s in steps)
 
+    @staticmethod
+    def _is_code_modification_task(task: str) -> bool:
+        """判断任务是否属于代码修改类。"""
+        return any(p.search(task) for p in _CODE_MODIFICATION_PATTERNS)
+
     def _extract_and_cache_paths(self, query: str, search_output: str) -> None:
         """从 search_code 输出中提取文件路径并缓存。"""
         import re
@@ -496,8 +536,8 @@ class ReActAgent:
             ctx = mgr.build_memory_context(task, workspace_id=ws_id)
             if ctx:
                 return "\n\n" + ctx
-        except Exception:
-            logger.debug("Failed to build memory context")
+        except Exception as exc:
+            logger.debug("Failed to build memory context: [%s] %s", type(exc).__name__, exc)
         return ""
 
     def _write_task_memory(
@@ -525,8 +565,8 @@ class ReActAgent:
                     tool_trace=tool_trace,
                     workspace_id=self._workspace_root or "",
                 )
-        except Exception:
-            logger.debug("Failed to write task memory")
+        except Exception as exc:
+            logger.debug("Failed to write task memory: [%s] %s", type(exc).__name__, exc)
 
     def _write_repo_memory(self, analysis, task: str) -> None:
         """Write repo analysis result to memory."""
@@ -545,5 +585,5 @@ class ReActAgent:
                 analysis_result=analysis.raw_output[:500],
                 confidence=analysis.confidence,
             )
-        except Exception:
-            logger.debug("Failed to write repo memory")
+        except Exception as exc:
+            logger.debug("Failed to write repo memory: [%s] %s", type(exc).__name__, exc)

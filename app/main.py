@@ -47,6 +47,61 @@ async def health():
     }
 
 
+@app.get("/health/deep")
+async def health_deep():
+    """深度健康检查 — 验证各组件可用性。"""
+    checks = {}
+    overall = "ok"
+
+    # 1. Workspace
+    ws = settings.workspace_root
+    checks["workspace"] = "ok" if ws.exists() and ws.is_dir() else "not_found"
+    if checks["workspace"] == "not_found":
+        overall = "degraded"
+
+    # 2. Memory manager
+    try:
+        from app.memory.memory_manager import get_memory_manager
+        mgr = get_memory_manager()
+        checks["memory"] = "ok"
+    except Exception as exc:
+        checks["memory"] = f"error: {type(exc).__name__}"
+        overall = "degraded"
+
+    # 3. Tool registry
+    try:
+        from app.tools.registry import ToolRegistry
+        from app.tools.read_file import ReadFileTool
+        from app.tools.search_code import SearchCodeTool
+        from app.tools.write_file import WriteFileTool
+        from app.tools.git_diff import GitDiffTool
+        from app.tools.git_status import GitStatusTool
+        from app.tools.run_tests import RunTestsTool
+        reg = ToolRegistry()
+        reg.register(ReadFileTool())
+        reg.register(SearchCodeTool())
+        reg.register(WriteFileTool())
+        reg.register(GitDiffTool())
+        reg.register(GitStatusTool())
+        reg.register(RunTestsTool())
+        checks["tool_registry"] = f"ok ({len(reg._tools)} tools)"
+    except Exception as exc:
+        checks["tool_registry"] = f"error: {type(exc).__name__}"
+        overall = "degraded"
+
+    # 4. LLM config
+    if settings.llm_api_key:
+        checks["llm_config"] = "ok"
+    else:
+        checks["llm_config"] = "missing_api_key"
+        overall = "degraded"
+
+    return {
+        "status": overall,
+        "checks": checks,
+    }
+
+
 # ── 静态文件 (放在最后，避免覆盖 API 路由) ──
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():

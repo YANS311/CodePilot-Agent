@@ -27,6 +27,9 @@ reports/eval_report.json
 # User uploads
 workspace/uploads/
 
+# Runtime data (memory persistence, eval reports)
+data/
+
 # Project docs (local only)
 PROJECT_SUMMARY.md
 docs/interview_3min.md

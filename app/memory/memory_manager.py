@@ -59,8 +59,8 @@ class HybridMemoryManager:
     Singleton via get_memory_manager().
     """
 
-    def __init__(self) -> None:
-        self._store = InMemoryStore()
+    def __init__(self, persist_path: Optional[str] = None) -> None:
+        self._store = InMemoryStore(persist_path=persist_path)
         self._vector = VectorMemoryStore()
 
     # ── Task Memory ──────────────────────────────────────
@@ -312,7 +312,10 @@ def get_memory_manager() -> HybridMemoryManager:
     """Get the global memory manager instance."""
     global _memory_manager
     if _memory_manager is None:
-        _memory_manager = HybridMemoryManager()
+        from pathlib import Path
+        persist_dir = Path(__file__).resolve().parent.parent.parent / "data" / "memory"
+        persist_path = str(persist_dir / "memory_store.json")
+        _memory_manager = HybridMemoryManager(persist_path=persist_path)
     return _memory_manager
 
 

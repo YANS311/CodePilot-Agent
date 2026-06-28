@@ -4,15 +4,20 @@
 2. ErrorMemory: error patterns and fix strategies
 3. RepoMemory: workspace/file summaries for cross-session reuse
 
-All stored in-memory. No vector DB, no embedding, no external storage.
+Supports optional JSON file persistence for restart survival.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,15 +96,61 @@ class InMemoryStore:
     """In-memory storage for all three memory types.
 
     Thread-safe for single-machine use.
+    Supports optional JSON file persistence.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, persist_path: Optional[str] = None) -> None:
         self._tasks: list[TaskMemory] = []
         self._errors: list[ErrorMemory] = []
         self._repos: list[RepoMemory] = []
         self._max_tasks: int = 200
         self._max_errors: int = 100
         self._max_repos: int = 50
+        self._persist_path: Optional[Path] = Path(persist_path) if persist_path else None
+        if self._persist_path:
+            self._load()
+
+    # ── Persistence ──────────────────────────────────────────
+
+    def _load(self) -> None:
+        """Load memory from JSON file if it exists."""
+        if not self._persist_path or not self._persist_path.exists():
+            return
+        try:
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            for t in data.get("tasks", []):
+                self._tasks.append(TaskMemory(**t))
+            for e in data.get("errors", []):
+                self._errors.append(ErrorMemory(**e))
+            for r in data.get("repos", []):
+                self._repos.append(RepoMemory(**r))
+            logger.info(
+                "Memory loaded: %d tasks, %d errors, %d repos",
+                len(self._tasks), len(self._errors), len(self._repos),
+            )
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to load memory file, starting fresh: %s", exc)
+            self._tasks = []
+            self._errors = []
+            self._repos = []
+
+    def _save(self) -> None:
+        """Persist memory to JSON file."""
+        if not self._persist_path:
+            return
+        try:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "tasks": [t.to_dict() for t in self._tasks],
+                "errors": [e.to_dict() for e in self._errors],
+                "repos": [r.to_dict() for r in self._repos],
+            }
+            self._persist_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("Failed to save memory file: %s", exc)
 
     # ── Task Memory ──────────────────────────────────────────
 
@@ -107,6 +158,7 @@ class InMemoryStore:
         self._tasks.append(memory)
         if len(self._tasks) > self._max_tasks:
             self._tasks = self._tasks[-self._max_tasks:]
+        self._save()
 
     def get_tasks(self, limit: int = 50) -> list[TaskMemory]:
         return list(reversed(self._tasks[-limit:]))
@@ -128,6 +180,7 @@ class InMemoryStore:
         self._errors.append(memory)
         if len(self._errors) > self._max_errors:
             self._errors = self._errors[-self._max_errors:]
+        self._save()
 
     def get_errors(self, limit: int = 50) -> list[ErrorMemory]:
         return list(reversed(self._errors[-limit:]))
@@ -153,6 +206,7 @@ class InMemoryStore:
         self._repos.append(memory)
         if len(self._repos) > self._max_repos:
             self._repos = self._repos[-self._max_repos:]
+        self._save()
 
     def get_repos(self, limit: int = 20) -> list[RepoMemory]:
         return list(reversed(self._repos[-limit:]))
@@ -163,6 +217,19 @@ class InMemoryStore:
             if mem.workspace_id == workspace_id:
                 return mem
         return None
+
+    # ── Clear ────────────────────────────────────────────────
+
+    def clear(self) -> None:
+        """Clear all memory and persisted file."""
+        self._tasks.clear()
+        self._errors.clear()
+        self._repos.clear()
+        if self._persist_path and self._persist_path.exists():
+            try:
+                self._persist_path.unlink()
+            except OSError:
+                pass
 
     # ── Stats ────────────────────────────────────────────────
 

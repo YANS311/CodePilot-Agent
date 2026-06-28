@@ -59,8 +59,9 @@ class LLMClient:
         self._base_url = settings.llm_base_url.rstrip("/")
         self._model = settings.llm_model
         self._max_tokens = settings.llm_max_tokens
-        self._timeout = settings.command_timeout
-        self._max_retries = 3
+        self._timeout = getattr(settings, "llm_timeout_seconds", 30)
+        self._max_retries = getattr(settings, "llm_max_retries", 2)
+        self._retry_backoff = getattr(settings, "llm_retry_backoff_seconds", 1.0)
 
     async def chat(
         self,
@@ -157,7 +158,7 @@ class LLMClient:
                             "Server error %d (attempt %d/%d)",
                             resp.status_code, attempt, self._max_retries,
                         )
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(self._retry_backoff * attempt)
                         continue
 
                     if resp.status_code >= 400:
@@ -176,7 +177,7 @@ class LLMClient:
                     exc, attempt, self._max_retries,
                 )
                 if attempt < self._max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(self._retry_backoff * attempt)
 
         raise LLMClientError(
             f"LLM 调用失败，已重试 {self._max_retries} 次: {last_exc}"

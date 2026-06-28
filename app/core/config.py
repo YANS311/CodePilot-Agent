@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     max_tool_calls: int = 20
     command_timeout: int = 60
 
+    # --- LLM Retry ---
+    llm_timeout_seconds: int = 30
+    llm_max_retries: int = 2
+    llm_retry_backoff_seconds: float = 1.0
+
+    # --- Embedding ---
+    intent_embedding_threshold: float = 0.55
+
+    # --- Workspace Index Cache ---
+    workspace_index_cache_ttl: int = 300
+
     # --- Execution ---
     execution_mode: str = "local"  # local | docker
 
