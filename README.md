@@ -159,6 +159,16 @@ Self-tested execution traces documenting how the agent handles real coding tasks
 
 > See [docs/real_usage_cases.md](docs/real_usage_cases.md) for full execution traces and system lessons.
 
+## Engineering Notes for Interview
+
+Detailed engineering docs covering Docker operations, failure modes, and operational knowledge grounded in actual code:
+
+| Doc | Focus | Key Topics |
+|-----|-------|------------|
+| [Engineering Interview Audit](docs/engineering_interview_audit.md) | Docker, Memory/Cache, LLM failures | compose lifecycle, degradation modes, retry logic |
+| [Git Interview Notes](docs/git_interview_notes.md) | Git workflow Q&As | merge vs rebase, cherry-pick, revert vs reset |
+| [Agent Failure Playbook](docs/agent_failure_playbook.md) | Failure diagnosis steps | no-write detection, wrong file, test failures, timeouts |
+
 ## Tech Stack
 
 | Category | Technology |
