@@ -4,7 +4,7 @@
 
 > **Lightweight AI Coding Agent Prototype**
 
-CI runs the full pytest suite on push and pull request.
+CI runs the pytest suite on push and pull request. Tests that require external LLM APIs, local embedding models, or local-only documents are conditionally skipped when unavailable in CI. CI behavior and conditional skips are documented in [docs/ci_notes.md](docs/ci_notes.md).
 
 ## System Overview
 
