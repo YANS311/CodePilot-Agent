@@ -19,8 +19,10 @@ from app.tools.read_file import ReadFileTool
 from app.tools.registry import ToolRegistry
 from app.tools.search_code import SearchCodeTool
 from app.tools.write_file import WriteFileTool
+from app.memory.embeddings import EmbeddingModel
 
 WORKSPACE = str(PROJECT_ROOT / "workspace")
+_HAS_EMBEDDING_MODEL = EmbeddingModel().is_available()
 
 
 def _make_registry(**extra_tools) -> ToolRegistry:
@@ -214,6 +216,7 @@ class TestAgentRunResultSteps:
         assert len(result.thoughts) == 1
         assert result.thoughts[0] == "我需要搜索 Calculator 类"
 
+    @pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
     def test_multi_step_records_all(self):
         llm = _mock_llm([
             ChatResponse(

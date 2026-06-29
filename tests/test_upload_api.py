@@ -15,8 +15,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.core.config import settings
 
 transport = ASGITransport(app=app)
+_HAS_LLM = bool(settings.llm_api_key) and settings.llm_api_key != "dummy"
 
 
 # ═══════════════════════════════════════════
@@ -203,6 +205,7 @@ class TestFilesWorkspaceId:
 
 class TestChatWorkspaceId:
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _HAS_LLM, reason="LLM API key not configured")
     async def test_chat_with_workspace_id(self):
         # 上传文件
         async with AsyncClient(transport=transport, base_url="http://test") as client:

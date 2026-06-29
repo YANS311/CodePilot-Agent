@@ -21,6 +21,9 @@ from app.router.intent_router import (
     _rule_based_route,
 )
 from app.router.embedding_router import EmbeddingRouter, EmbeddingResult
+from app.memory.embeddings import EmbeddingModel
+
+_HAS_EMBEDDING_MODEL = EmbeddingModel().is_available()
 
 
 # ═══════════════════════════════════════════
@@ -86,6 +89,7 @@ class TestRuleBasedRouting:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="sentence-transformers model not available")
 class TestEmbeddingRouting:
     def test_classify_react(self):
         router = EmbeddingRouter()
