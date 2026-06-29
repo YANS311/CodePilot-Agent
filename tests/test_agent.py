@@ -87,6 +87,7 @@ class TestAgentSingleToolCall:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
 class TestAgentMultiStep:
     def test_search_then_read(self):
         """LLM 先 search_code，再 read_file，最后回答。"""
@@ -159,6 +160,7 @@ class TestAgentMaxToolCalls:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
 class TestAgentToolFailure:
     def test_tool_error_reported(self):
         """工具返回错误信息时，Agent 将其传回 LLM。"""

@@ -20,10 +20,12 @@ from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.read_file import ReadFileTool
 from app.tools.search_code import SearchCodeTool
 from app.tools.registry import ToolRegistry
+from app.memory.embeddings import EmbeddingModel
 
 client = TestClient(app)
 
 WORKSPACE = str(PROJECT_ROOT / "workspace")
+_HAS_EMBEDDING_MODEL = EmbeddingModel().is_available()
 
 
 def _make_registry() -> ToolRegistry:
@@ -109,6 +111,7 @@ class TestFileListSorted:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
 class TestQueryTaskNoGitStatus:
     def test_query_only_uses_search_and_read(self):
         """模拟纯查询任务：LLM 只调用 search_code 和 read_file，不调用 git_status。"""
