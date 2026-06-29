@@ -16,8 +16,10 @@ from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.tools.read_file import ReadFileTool
 from app.tools.search_code import SearchCodeTool
 from app.tools.registry import ToolRegistry
+from app.memory.embeddings import EmbeddingModel
 
 WORKSPACE = str(PROJECT_ROOT / "workspace")
+_HAS_EMBEDDING_MODEL = EmbeddingModel().is_available()
 
 
 def _make_registry() -> ToolRegistry:
@@ -58,6 +60,7 @@ class TestAgentDirectAnswer:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
 class TestAgentSingleToolCall:
     def test_single_search(self):
         """LLM 调用一次 search_code，然后给出回答。"""
@@ -129,6 +132,7 @@ class TestAgentMultiStep:
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
 class TestAgentMaxToolCalls:
     def test_stops_at_limit(self):
         """超过 max_tool_calls 后强制停止。"""

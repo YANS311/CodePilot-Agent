@@ -192,6 +192,7 @@ class TestAgentRunResultSteps:
         assert result.steps == []
         assert result.thoughts == []
 
+    @pytest.mark.skipif(not _HAS_EMBEDDING_MODEL, reason="Intent router needs embedding model for correct routing")
     def test_tool_call_creates_step(self):
         llm = _mock_llm([
             ChatResponse(
