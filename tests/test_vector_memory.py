@@ -15,6 +15,8 @@ from app.memory.embeddings import EmbeddingModel
 from app.memory.vector_store import VectorMemoryStore, VectorEntry
 from app.memory.memory_manager import HybridMemoryManager, get_memory_manager
 
+HAS_MODEL = EmbeddingModel().is_available()
+
 
 # ═══════════════════════════════════════════
 # 1. EmbeddingModel
@@ -36,6 +38,7 @@ class TestEmbeddingModel:
         model = EmbeddingModel()
         assert model.dim == 384
 
+    @pytest.mark.skipif(not HAS_MODEL, reason="sentence-transformers model not available")
     def test_normalized_vectors(self):
         model = EmbeddingModel()
         vec = model.encode_one("test query")
