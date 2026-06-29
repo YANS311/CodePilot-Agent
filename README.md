@@ -1,6 +1,10 @@
 # CodePilot Agent
 
+[![CI](https://github.com/YANS311/CodePilot-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/YANS311/CodePilot-Agent/actions/workflows/ci.yml)
+
 > **Lightweight AI Coding Agent Prototype**
+
+CI runs the full pytest suite on push and pull request.
 
 ## System Overview
 
