@@ -6,6 +6,12 @@
 
 CI runs the pytest suite on push and pull request. Tests that require external LLM APIs, local embedding models, or local-only documents are conditionally skipped when unavailable in CI. CI behavior and conditional skips are documented in [docs/ci_notes.md](docs/ci_notes.md).
 
+**CI Design Principle:**
+- CI prioritizes determinism over completeness
+- External dependencies (LLM API, embedding model) are mocked in CI mode
+- Integration tests are isolated from external services
+- Full system evaluation runs locally with real models
+
 ## System Overview
 
 CodePilot is an interview-ready engineering prototype that demonstrates a ReAct-based coding agent with tool-calling, evidence-grounded analysis, and controlled evaluation benchmarks.

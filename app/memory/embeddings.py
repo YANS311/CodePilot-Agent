@@ -19,13 +19,29 @@ _model_name: Optional[str] = None
 _model_failed = False  # Cache failure to avoid repeated retries
 
 
+def _is_ci_mode() -> bool:
+    """Check if CI mode is enabled."""
+    try:
+        from app.core.config import settings
+        return getattr(settings, "ci_mode", False)
+    except Exception:
+        return False
+
+
 def _get_model(model_name: str = "all-MiniLM-L6-v2"):
     """Load sentence-transformers model (lazy, singleton).
 
+    In CI mode, returns a FixedEmbeddingModel instead.
     Caches failure — if the model can't be loaded (no network, missing deps),
     subsequent calls return None immediately without retrying.
     """
     global _model, _model_name, _model_failed
+
+    # CI mode: return fixed embedding model (deterministic, no deps)
+    if _is_ci_mode():
+        from app.memory.fixed_embedding import FixedEmbeddingModel
+        return FixedEmbeddingModel()
+
     if _model is not None and _model_name == model_name:
         return _model
     if _model_failed:

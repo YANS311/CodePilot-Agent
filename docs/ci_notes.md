@@ -1,10 +1,50 @@
 # CI Notes
 
-> Transparency document for GitHub Actions CI behavior and conditional test skips.
+> Transparency document for GitHub Actions CI behavior, test layering, and conditional skips.
 
 ---
 
-## 1. What CI Runs
+## 1. CI Design Principle
+
+- CI prioritizes **determinism** over completeness
+- External dependencies (LLM API, embedding model) are mocked in CI mode
+- Integration tests are isolated from external services
+- Full system evaluation runs locally with real models
+
+---
+
+## 2. Test Architecture
+
+```
+tests/
+├── unit/          # 100% CI — deterministic, no external deps
+├── integration/   # CI with mock deps — may skip if real deps needed
+└── e2e/           # Local only — never in CI
+```
+
+| Layer | CI Behavior | Local Behavior |
+|-------|------------|----------------|
+| `unit/` | Always runs, 0 skips | Always runs |
+| `integration/` | Runs with CI_MODE=true (mock deps) | Runs with real deps, may skip if unavailable |
+| `e2e/` | Not included in CI | Runs locally |
+
+---
+
+## 3. CI Mode (`CODEPILOT_CI_MODE=true`)
+
+When `CODEPILOT_CI_MODE=true` is set:
+
+| Component | Normal Mode | CI Mode |
+|-----------|------------|---------|
+| Embedding Model | sentence-transformers (real) | FixedEmbeddingModel (deterministic hash) |
+| LLM Client | OpenAI/DeepSeek API | MockLLMProvider (deterministic response) |
+| API Key | Required | Not required |
+
+This allows all integration tests to run in CI without downloading models or calling APIs.
+
+---
+
+## 4. What CI Runs
 
 **Workflow:** `.github/workflows/ci.yml`
 
@@ -13,91 +53,83 @@
 | Trigger | push / pull_request to main/master |
 | Runner | ubuntu-latest |
 | Python | 3.11 |
-| Command | `pytest tests/ -q` |
-| pip cache | Enabled |
-
-CI installs dependencies from `requirements.txt` and runs the full pytest collection. Tests that cannot run in CI are conditionally skipped — they are not disabled or removed.
-
----
-
-## 2. Why Some Tests Are Conditionally Skipped
-
-Three categories of tests require dependencies that are intentionally unavailable in CI:
-
-### 2.1 External LLM API
-
-Tests that call the real LLM endpoint (e.g., `test_upload_api.py::TestChatWorkspaceId`) need a valid API key. CI sets `CODEPILOT_LLM_API_KEY=dummy` — no real API calls are made. These tests are skipped with reason: `LLM API key not configured`.
-
-### 2.2 Local Embedding Model
-
-Tests that depend on `sentence-transformers` model loading (e.g., embedding router classification, agent multi-step routing, vector normalization) require the model to be downloaded and cached. CI does not pre-download the model to avoid network dependency and slow builds. These tests are skipped with reason: `sentence-transformers model not available` or `Intent router needs embedding model for correct routing`.
-
-### 2.3 Local-Only Documents
-
-Tests that validate local interview docs (`docs/system_summary.md`, `docs/interview_onepager.md`) are skipped in CI because these files are in `.gitignore` — they exist only on the developer's local machine. Skip reason: `local-only docs absent`.
+| CI Mode | `CODEPILOT_CI_MODE=true` |
+| Steps | `pytest tests/unit -q` then `pytest tests/integration -q` |
+| e2e tests | Not included |
 
 ---
 
-## 3. Local vs CI Testing
+## 5. Skip Governance
 
-| Aspect | Local | CI |
-|--------|-------|-----|
-| Python version | 3.9 (developer) | 3.11 (matrix) |
-| LLM API key | Configured | Dummy (skipped) |
-| Embedding model | Cached locally | Not downloaded (skipped) |
-| Local docs | Present | Gitignored (skipped) |
-| Expected result | 516 passed, 2 skipped | Green with conditional skips |
+All `pytest.mark.skipif` must use one of these standardized reasons:
 
-**Local full environment:** 516 passed, 2 skipped — all tests including those that need external dependencies.
+| Reason | When to Use |
+|--------|------------|
+| `"external dependency unavailable: sentence-transformers model"` | Embedding model not available |
+| `"external dependency unavailable: LLM API key"` | LLM API key not configured |
+| `"external dependency unavailable: Docker"` | Docker not available |
+| `"optional integration test: local-only docs"` | Local-only documents missing |
+| `"CI mode limitation"` | CI-specific constraints |
 
-**CI environment:** Green — core logic, API routing, tool execution, memory, workspace indexing, and non-external tests all pass. Tests requiring external LLM, embedding model, or local docs are skipped with clear reasons.
-
-CI validates the same codebase. The difference is environmental, not functional.
+Every skip reason is printed in the pytest terminal summary via the skip reporter in `tests/conftest.py`.
 
 ---
 
-## 4. Skip Reason Audit
+## 6. Metric Consistency
 
-Every `pytest.mark.skipif` in the test suite has a reason string that explains:
+All evaluation metrics must distinguish their source:
 
-| Test File | Skip Condition | Reason |
-|-----------|---------------|--------|
-| `test_system_summary.py` | `not _HAS_SYSTEM_SUMMARY` | `docs/system_summary.md not in git checkout (local-only)` |
-| `test_system_summary.py` | `not _HAS_ONEPAGER` | `docs/interview_onepager.md not in git checkout (local-only)` |
-| `test_intent_router.py` | `not _HAS_EMBEDDING_MODEL` | `sentence-transformers model not available` |
-| `test_vector_memory.py` | `not HAS_MODEL` | `sentence-transformers model not available` |
-| `test_agent.py` | `not _HAS_EMBEDDING_MODEL` | `Intent router needs embedding model for correct routing` |
-| `test_d7_advanced.py` | `not _HAS_EMBEDDING_MODEL` | `Intent router needs embedding model for correct routing` |
-| `test_d76_demo.py` | `not _HAS_EMBEDDING_MODEL` | `Intent router needs embedding model for correct routing` |
-| `test_upload_api.py` | `not _HAS_LLM` | `LLM API key not configured` |
-
-No test is skipped without a reason. No pure unit test is skipped — only tests with external dependencies.
+| Metric Source | Environment | Description |
+|--------------|-------------|-------------|
+| CI metrics | GitHub Actions | Deterministic, mock deps |
+| Local metrics | Developer machine | Real embedding + LLM |
+| Stress metrics | Manual run | Multi-file, retry, recovery |
 
 ---
 
-## 5. Future Improvements
+## 7. Failure Observability
 
-These are known gaps that could improve CI coverage:
+All agent exceptions are recorded as `AgentErrorEvent`:
 
-1. **Deterministic mock embedding model** — Provide a lightweight mock `EmbeddingModel` that returns fixed vectors. This would allow embedding router and agent routing tests to run in CI without downloading `sentence-transformers`.
+```python
+@dataclass
+class AgentErrorEvent:
+    module: str           # "react_agent" / "llm_client" / "tool"
+    error_type: str       # Exception class name
+    context: str          # What was happening
+    tool_name: str        # Which tool (if applicable)
+    recovery_action: str  # What recovery was attempted
+```
 
-2. **Mock LLM provider** — A mock `LLMClient` that returns scripted responses for integration tests. Currently, agent tests mock at the Python level (`AsyncMock`), but API-level tests (like `test_chat_with_workspace_id`) hit the real endpoint.
-
-3. **Split CI into unit / integration / external jobs** — Separate fast unit tests (always green) from integration tests (need mocks) and external tests (need real API). This would make CI faster and clearer about what each job validates.
-
-These improvements are not implemented yet. The current CI is sufficient for validating core logic correctness.
+Error events are stored in `AgentRunResult.error_events` and visible in the eval system.
 
 ---
 
-## 6. How to Run Locally
+## 8. Future Improvements
+
+1. **Deterministic mock embedding model** — ✅ Implemented as `FixedEmbeddingModel`
+2. **Mock LLM provider** — ✅ Implemented as `MockLLMProvider`
+3. **Split CI into unit / integration / e2e** — ✅ Implemented
+4. **Skip reason standardization** — ✅ Implemented
+5. **Failure observability** — ✅ Implemented as `AgentErrorEvent`
+
+---
+
+## 9. How to Run Locally
 
 ```bash
-# Full test suite (requires embedding model + LLM API key)
-pytest tests/ -v
+# Unit tests only (fast, no external deps)
+pytest tests/unit -q
 
-# Quick check (same as CI)
+# Integration tests (needs embedding model or CI_MODE)
+pytest tests/integration -q
+
+# E2E tests (needs full local environment)
+pytest tests/e2e -q
+
+# Full suite
 pytest tests/ -q
 
-# Skip external-dependency tests manually
-pytest tests/ -q -k "not (TestEmbeddingRouting or TestAgentSingleToolCall)"
+# With CI mode (mock deps)
+CODEPILOT_CI_MODE=true pytest tests/unit tests/integration -q
 ```

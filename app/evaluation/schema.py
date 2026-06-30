@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+
+
+class EvalLayer(str, Enum):
+    """Evaluation layer — determines where and how an eval task runs."""
+
+    UNIT = "unit"              # CI — deterministic, mock deps
+    INTEGRATION = "integration"  # Local — real embedding, optional LLM
+    STRESS = "stress"          # Manual — multi-file, retry, recovery
 
 
 @dataclass
@@ -20,6 +29,7 @@ class EvalTask:
     expected_behavior: str = ""
     success_criteria: list[str] = field(default_factory=list)
     reference_fix: str = ""
+    layer: EvalLayer = EvalLayer.INTEGRATION
 
     @classmethod
     def from_dict(cls, d: dict) -> EvalTask:
@@ -34,6 +44,7 @@ class EvalTask:
             expected_behavior=d.get("expected_behavior", ""),
             success_criteria=d.get("success_criteria", []),
             reference_fix=d.get("reference_fix", ""),
+            layer=EvalLayer(d.get("layer", "integration")),
         )
 
 

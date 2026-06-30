@@ -14,9 +14,7 @@ jobs:
         python-version: ["3.11"]
 
     env:
-      CODEPILOT_LLM_API_KEY: dummy
-      CODEPILOT_LLM_BASE_URL: https://api.openai.com/v1
-      CODEPILOT_LLM_MODEL: gpt-4o
+      CODEPILOT_CI_MODE: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -33,5 +31,8 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Run tests
-        run: pytest tests/ -q
+      - name: Run unit tests
+        run: pytest tests/unit -q --tb=short
+
+      - name: Run integration tests
+        run: pytest tests/integration -q --tb=short

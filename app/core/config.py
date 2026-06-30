@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # --- Workspace Index Cache ---
     workspace_index_cache_ttl: int = 300
 
+    # --- CI Mode ---
+    ci_mode: bool = False  # True = use mock embedding + mock LLM
+
     # --- Execution ---
     execution_mode: str = "local"  # local | docker
 

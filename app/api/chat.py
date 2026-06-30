@@ -112,7 +112,8 @@ def _build_agent(workspace_root: Optional[str] = None) -> ReActAgent:
     # 构建 workspace 索引
     try:
         index = IndexBuilder().build(ws)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to build workspace index: [%s] %s", type(exc).__name__, exc)
         index = None
     registry = _build_registry(index=index)
     return ReActAgent(

@@ -55,6 +55,12 @@ class LLMClient:
     """
 
     def __init__(self, settings: Settings) -> None:
+        self._ci_mode = getattr(settings, "ci_mode", False)
+        if self._ci_mode:
+            from app.core.mock_llm import MockLLMProvider
+            self._mock = MockLLMProvider()
+            return
+        self._mock = None
         self._api_key = settings.llm_api_key
         self._base_url = settings.llm_base_url.rstrip("/")
         self._model = settings.llm_model
@@ -83,6 +89,10 @@ class LLMClient:
         Raises:
             LLMClientError: 所有重试用尽后的统一异常。
         """
+        # CI mode: use deterministic mock
+        if self._ci_mode and self._mock is not None:
+            return await self._mock.chat(messages, tools=tools, temperature=temperature)
+
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": messages,

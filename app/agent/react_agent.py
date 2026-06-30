@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
+from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
 from app.memory.memory_manager import get_memory_manager
 from app.router.intent_router import get_intent_router, INTENT_REPO, INTENT_SECURITY
@@ -106,6 +107,8 @@ class AgentRunResult:
     # D34: write_file tracking
     wrote_file: bool = False
     no_code_change_reason: str = ""
+    # D36: error event tracking
+    error_events: list[AgentErrorEvent] = field(default_factory=list)
 
 
 class ReActAgent:
@@ -134,6 +137,7 @@ class ReActAgent:
         self._budget = ToolBudget(max_calls=max_tool_calls)
         self._guardrail = ToolGuardrail()
         self._index: Optional[WorkspaceIndex] = None
+        self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
 
     async def run(self, task: str) -> AgentRunResult:
@@ -342,6 +346,7 @@ class ReActAgent:
             security_warnings=self._guardrail.warnings,
             wrote_file=has_write,
             no_code_change_reason=no_reason,
+            error_events=list(self._error_events),
         )
         self._write_task_memory(task, result, steps)
         return result
@@ -393,6 +398,7 @@ class ReActAgent:
             steps=[],
             evidence=evidence_data,
             confidence=analysis.confidence,
+            error_events=list(self._error_events),
         )
         # D32: Write repo memory
         self._write_repo_memory(analysis, task)
@@ -445,6 +451,12 @@ class ReActAgent:
                 "Failed to build workspace index: [%s] %s",
                 type(exc).__name__, exc,
             )
+            self._error_events.append(AgentErrorEvent(
+                module="react_agent",
+                error_type=type(exc).__name__,
+                context="Building workspace index",
+                recovery_action="fallback to empty context",
+            ))
             return ""
 
         if not self._index.files:
@@ -538,6 +550,12 @@ class ReActAgent:
                 return "\n\n" + ctx
         except Exception as exc:
             logger.debug("Failed to build memory context: [%s] %s", type(exc).__name__, exc)
+            self._error_events.append(AgentErrorEvent(
+                module="react_agent",
+                error_type=type(exc).__name__,
+                context="Building memory context",
+                recovery_action="fallback to empty context",
+            ))
         return ""
 
     def _write_task_memory(
@@ -567,6 +585,12 @@ class ReActAgent:
                 )
         except Exception as exc:
             logger.debug("Failed to write task memory: [%s] %s", type(exc).__name__, exc)
+            self._error_events.append(AgentErrorEvent(
+                module="react_agent",
+                error_type=type(exc).__name__,
+                context="Writing task memory",
+                recovery_action="skip memory write",
+            ))
 
     def _write_repo_memory(self, analysis, task: str) -> None:
         """Write repo analysis result to memory."""
@@ -587,3 +611,9 @@ class ReActAgent:
             )
         except Exception as exc:
             logger.debug("Failed to write repo memory: [%s] %s", type(exc).__name__, exc)
+            self._error_events.append(AgentErrorEvent(
+                module="react_agent",
+                error_type=type(exc).__name__,
+                context="Writing repo memory",
+                recovery_action="skip memory write",
+            ))

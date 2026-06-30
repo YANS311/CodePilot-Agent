@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from app.evaluation.analyzer import analyze_error
-from app.evaluation.schema import EvalResult, EvalTask
+from app.evaluation.schema import EvalLayer, EvalResult, EvalTask
 from app.execution.local_runner import LocalExecutionRunner
 from app.memory.memory_manager import get_memory_manager
 
@@ -145,16 +145,20 @@ class EvaluationRunner:
         self,
         agent_factory,
         task_ids: list[str] | None = None,
+        layer: EvalLayer | None = None,
     ) -> list[EvalResult]:
         """执行所有（或指定的）评测任务。
 
         Args:
             agent_factory: 可调用对象，接受 workspace_root 参数返回 ReActAgent。
             task_ids: 可选的任务 ID 列表。为 None 时执行全部。
+            layer: 可选的评测层级过滤。为 None 时执行全部层级。
         """
         tasks = self.load_tasks()
         if task_ids:
             tasks = [t for t in tasks if t.id in task_ids]
+        if layer:
+            tasks = [t for t in tasks if t.layer == layer]
 
         results = []
         for task in tasks:

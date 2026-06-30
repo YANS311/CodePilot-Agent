@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+markers = [
+    "unit: Pure logic tests (no external deps)",
+    "integration: Tests needing embedding/LLM/workspace",
+    "e2e: End-to-end tests (local only)",
+]
