@@ -15,6 +15,14 @@ class EvalLayer(str, Enum):
     STRESS = "stress"          # Manual — multi-file, retry, recovery
 
 
+class BaselineMode(str, Enum):
+    """Baseline evaluation mode — controls agent configuration."""
+
+    BARE_LLM = "bare_llm"              # LLM only, no tools, no agent loop
+    REACT_NO_MEMORY = "react_no_memory"  # ReAct agent, memory disabled
+    REACT_FULL = "react_full"          # Full agent with memory, verification, tools
+
+
 @dataclass
 class EvalTask:
     """单个评测任务的定义。"""
@@ -84,6 +92,11 @@ class EvalResult:
     files_modified: list[str] = field(default_factory=list)  # 实际修改的文件列表
     # D32: memory tracking
     memory_utilized: bool = False  # whether historical memory was injected
+    # v0.4.5: agent-specific metrics
+    verification_passed: bool = False  # did verification loop pass?
+    verification_retries: int = 0  # how many verification retries
+    code_edit_used: bool = False  # was code_edit tool used?
+    write_file_used: bool = False  # was write_file tool used?
 
     def to_dict(self) -> dict:
         return {

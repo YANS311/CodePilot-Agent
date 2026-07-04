@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.evaluation.schema import EvalResult, EvalTask
+from app.evaluation.schema import BaselineMode, EvalLayer, EvalResult, EvalTask
 from app.evaluation.runner import EvaluationRunner
 from app.evaluation.metrics import compute_metrics, EvalMetrics
 
@@ -217,7 +217,7 @@ class TestRunnerRunTask:
             tool_calls_count=3,
         ))
 
-        def factory(ws_root, max_calls=None):
+        def factory(ws_root, max_calls=None, baseline=BaselineMode.REACT_FULL):
             mock_agent._workspace_root = ws_root
             return mock_agent
 
@@ -257,7 +257,7 @@ class TestRunnerRunTask:
         )
 
         result = asyncio.run(
-            runner.run_task(task, lambda ws, max_calls=None: mock_agent)
+            runner.run_task(task, lambda ws, max_calls=None, baseline=BaselineMode.REACT_FULL: mock_agent)
         )
 
         assert result.success is False
@@ -300,3 +300,264 @@ class TestReportGeneration:
         json_str = json.dumps(report, ensure_ascii=False, indent=2)
         parsed = json.loads(json_str)
         assert parsed["metrics"]["total_tasks"] == 1
+
+
+# ═══════════════════════════════════════════
+# 8. v0.4.5: EvalLayer enum
+# ═══════════════════════════════════════════
+
+
+class TestEvalLayer:
+    def test_layer_values(self):
+        assert EvalLayer.UNIT.value == "unit"
+        assert EvalLayer.INTEGRATION.value == "integration"
+        assert EvalLayer.STRESS.value == "stress"
+
+    def test_task_from_dict_with_layer(self):
+        d = {
+            "id": "t1",
+            "name": "T1",
+            "task": "fix",
+            "layer": "unit",
+        }
+        task = EvalTask.from_dict(d)
+        assert task.layer == EvalLayer.UNIT
+
+    def test_task_from_dict_default_layer(self):
+        d = {"id": "t1", "name": "T1", "task": "fix"}
+        task = EvalTask.from_dict(d)
+        assert task.layer == EvalLayer.INTEGRATION
+
+    def test_all_tasks_have_layer(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        for t in tasks:
+            assert isinstance(t.layer, EvalLayer)
+
+
+# ═══════════════════════════════════════════
+# 9. v0.4.5: BaselineMode enum
+# ═══════════════════════════════════════════
+
+
+class TestBaselineMode:
+    def test_baseline_values(self):
+        assert BaselineMode.BARE_LLM.value == "bare_llm"
+        assert BaselineMode.REACT_NO_MEMORY.value == "react_no_memory"
+        assert BaselineMode.REACT_FULL.value == "react_full"
+
+    def test_baseline_from_string(self):
+        assert BaselineMode("bare_llm") == BaselineMode.BARE_LLM
+        assert BaselineMode("react_full") == BaselineMode.REACT_FULL
+
+
+# ═══════════════════════════════════════════
+# 10. v0.4.5: Layer filtering
+# ═══════════════════════════════════════════
+
+
+class TestLayerFiltering:
+    def test_filter_by_unit_layer(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        unit_tasks = [t for t in tasks if t.layer == EvalLayer.UNIT]
+        assert len(unit_tasks) > 0
+        for t in unit_tasks:
+            assert t.layer == EvalLayer.UNIT
+
+    def test_filter_by_integration_layer(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        int_tasks = [t for t in tasks if t.layer == EvalLayer.INTEGRATION]
+        assert len(int_tasks) > 0
+
+    def test_filter_by_stress_layer(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        stress_tasks = [t for t in tasks if t.layer == EvalLayer.STRESS]
+        assert len(stress_tasks) > 0
+
+    def test_all_layers_cover_all_tasks(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        by_layer = {EvalLayer.UNIT: 0, EvalLayer.INTEGRATION: 0, EvalLayer.STRESS: 0}
+        for t in tasks:
+            by_layer[t.layer] += 1
+        assert sum(by_layer.values()) == 30
+        assert all(v > 0 for v in by_layer.values())
+
+
+# ═══════════════════════════════════════════
+# 11. v0.4.5: Bare LLM baseline
+# ═══════════════════════════════════════════
+
+
+class TestBareLLMBaseline:
+    def test_bare_llm_returns_result(self):
+        """Bare LLM baseline should return AgentRunResult with tool_calls_count=0."""
+        from unittest.mock import AsyncMock, MagicMock
+        from app.core.llm_client import ChatResponse
+
+        runner = EvaluationRunner()
+
+        mock_agent = MagicMock()
+        mock_llm = MagicMock()
+        mock_llm.chat = AsyncMock(return_value=ChatResponse(
+            content="This is a bug in subtract. Change a+b to a-b.",
+            tool_calls=[],
+        ))
+        mock_agent._llm = mock_llm
+
+        def factory(ws_root, max_calls=None, baseline=BaselineMode.REACT_FULL):
+            return mock_agent
+
+        task = EvalTask(
+            id="bare-test",
+            name="Bare LLM Test",
+            task="Fix subtract function",
+            difficulty="easy",
+            category="bug-fix",
+        )
+
+        result = asyncio.run(
+            runner.run_task(task, factory, baseline=BaselineMode.BARE_LLM)
+        )
+
+        assert result.task_id == "bare-test"
+        assert result.tool_calls_count == 0
+        assert "bug" in result.final_answer.lower() or "subtract" in result.final_answer.lower()
+
+    def test_bare_llm_no_tools_used(self):
+        """Bare LLM should not invoke any tools."""
+        from unittest.mock import AsyncMock, MagicMock
+        from app.core.llm_client import ChatResponse
+
+        runner = EvaluationRunner()
+
+        mock_agent = MagicMock()
+        mock_llm = MagicMock()
+        mock_llm.chat = AsyncMock(return_value=ChatResponse(
+            content="Analysis complete.",
+            tool_calls=[],
+        ))
+        mock_agent._llm = mock_llm
+
+        task = EvalTask(
+            id="bare-test-2",
+            name="Bare LLM Test 2",
+            task="Fix something",
+            difficulty="easy",
+            category="bug-fix",
+        )
+
+        result = asyncio.run(
+            runner.run_task(task, lambda ws, mc=None, bl=BaselineMode.REACT_FULL: mock_agent,
+                           baseline=BaselineMode.BARE_LLM)
+        )
+
+        assert result.tool_calls_count == 0
+        mock_llm.chat.assert_called_once()
+
+
+# ═══════════════════════════════════════════
+# 12. v0.4.5: Agent-specific metrics
+# ═══════════════════════════════════════════
+
+
+class TestAgentMetrics:
+    def test_verification_pass_rate(self):
+        results = [
+            EvalResult(task_id="t1", success=True, verification_passed=True, verification_retries=1),
+            EvalResult(task_id="t2", success=False, verification_passed=False, verification_retries=2),
+            EvalResult(task_id="t3", success=True, verification_passed=True, verification_retries=0),
+        ]
+        tasks = [
+            EvalTask(id="t1", name="T1", task="fix", difficulty="easy", category="bug-fix"),
+            EvalTask(id="t2", name="T2", task="fix", difficulty="easy", category="bug-fix"),
+            EvalTask(id="t3", name="T3", task="fix", difficulty="easy", category="bug-fix"),
+        ]
+        m = compute_metrics(results, tasks)
+        # t1 and t3 ran verification (retries>0 or passed=True), t2 also ran
+        # 2 out of 3 passed verification
+        assert m.verification_pass_rate == pytest.approx(2 / 3)
+
+    def test_edit_precision_rate(self):
+        results = [
+            EvalResult(task_id="t1", success=True, code_edit_used=True, write_file_used=False),
+            EvalResult(task_id="t2", success=True, code_edit_used=False, write_file_used=True),
+            EvalResult(task_id="t3", success=True, code_edit_used=True, write_file_used=True),
+        ]
+        tasks = [
+            EvalTask(id="t1", name="T1", task="fix", difficulty="easy", category="bug-fix"),
+            EvalTask(id="t2", name="T2", task="fix", difficulty="easy", category="bug-fix"),
+            EvalTask(id="t3", name="T3", task="fix", difficulty="easy", category="bug-fix"),
+        ]
+        m = compute_metrics(results, tasks)
+        # code_edit: t1, t3 = 2; write_file: t2, t3 = 2; total = 4
+        assert m.edit_precision_rate == pytest.approx(2 / 4)
+
+    def test_success_by_layer(self):
+        results = [
+            EvalResult(task_id="t1", success=True),
+            EvalResult(task_id="t2", success=False),
+            EvalResult(task_id="t3", success=True),
+        ]
+        tasks = [
+            EvalTask(id="t1", name="T1", task="fix", difficulty="easy", category="bug-fix", layer=EvalLayer.UNIT),
+            EvalTask(id="t2", name="T2", task="fix", difficulty="easy", category="bug-fix", layer=EvalLayer.INTEGRATION),
+            EvalTask(id="t3", name="T3", task="fix", difficulty="easy", category="bug-fix", layer=EvalLayer.UNIT),
+        ]
+        m = compute_metrics(results, tasks)
+        assert m.success_by_layer["unit"]["success"] == 2
+        assert m.success_by_layer["unit"]["total"] == 2
+        assert m.success_by_layer["integration"]["success"] == 0
+        assert m.success_by_layer["integration"]["total"] == 1
+
+    def test_metrics_to_dict_includes_new_fields(self):
+        results = [EvalResult(task_id="t1", success=True, verification_passed=True, code_edit_used=True)]
+        tasks = [EvalTask(id="t1", name="T1", task="fix", difficulty="easy", category="bug-fix", layer=EvalLayer.UNIT)]
+        m = compute_metrics(results, tasks)
+        d = m.to_dict()
+        assert "success_by_layer" in d
+        assert "verification_pass_rate" in d
+        assert "edit_precision_rate" in d
+
+
+# ═══════════════════════════════════════════
+# 13. v0.4.5: Report with baseline and layer
+# ═══════════════════════════════════════════
+
+
+class TestReportV21:
+    def test_report_includes_baseline_and_layer(self):
+        results = [EvalResult(task_id="t1", success=True, passed=2, tool_calls_count=1, duration_ms=50)]
+        tasks = [EvalTask(id="t1", name="T1", task="fix", difficulty="easy", category="bug-fix", layer=EvalLayer.UNIT)]
+        metrics = compute_metrics(results, tasks)
+
+        report = {
+            "version": "2.1",
+            "timestamp": "2026-07-04T00:00:00",
+            "baseline": "react_full",
+            "layer": "unit",
+            "tasks": [r.to_dict() for r in results],
+            "metrics": metrics.to_dict(),
+        }
+
+        assert report["version"] == "2.1"
+        assert report["baseline"] == "react_full"
+        assert report["layer"] == "unit"
+        assert "success_by_layer" in report["metrics"]
+
+    def test_eval_result_agent_fields(self):
+        r = EvalResult(
+            task_id="t1",
+            success=True,
+            verification_passed=True,
+            verification_retries=1,
+            code_edit_used=True,
+            write_file_used=False,
+        )
+        assert r.verification_passed is True
+        assert r.verification_retries == 1
+        assert r.code_edit_used is True
+        assert r.write_file_used is False

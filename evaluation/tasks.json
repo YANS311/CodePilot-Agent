@@ -16,7 +16,8 @@
         "subtract 方法正确返回 a - b",
         "测试用例: subtract(5, 3) == 2"
       ],
-      "reference_fix": "将 subtract 中的 a + b 改为 a - b"
+      "reference_fix": "将 subtract 中的 a + b 改为 a - b",
+      "layer": "unit"
     },
     {
       "id": "fix-reverse-string",
@@ -31,7 +32,8 @@
         "reverse_string 正确反转字符串",
         "测试用例: reverse_string('hello') == 'olleh'"
       ],
-      "reference_fix": "将 s[:-1] 改为 s[::-1]"
+      "reference_fix": "将 s[:-1] 改为 s[::-1]",
+      "layer": "unit"
     },
     {
       "id": "fix-count-vowels",
@@ -46,7 +48,8 @@
         "count_vowels 正确统计元音数量",
         "测试用例: count_vowels('hello') == 2"
       ],
-      "reference_fix": "将 return count - 1 改为 return count"
+      "reference_fix": "将 return count - 1 改为 return count",
+      "layer": "unit"
     },
     {
       "id": "fix-todo-list-pending",
@@ -61,7 +64,8 @@
         "list_pending 方法返回未完成的 todo",
         "测试用例: list_pending 不包含 done=True 的项"
       ],
-      "reference_fix": "将 list_pending 中的 if t.done 改为 if not t.done"
+      "reference_fix": "将 list_pending 中的 if t.done 改为 if not t.done",
+      "layer": "unit"
     },
     {
       "id": "fix-user-to-dict",
@@ -76,7 +80,8 @@
         "to_dict 返回的字典包含 created_at",
         "测试用例: 'created_at' in user.to_dict()"
       ],
-      "reference_fix": "在 to_dict 返回的字典中添加 'created_at': self.created_at"
+      "reference_fix": "在 to_dict 返回的字典中添加 'created_at': self.created_at",
+      "layer": "unit"
     },
     {
       "id": "fix-task-to-dict",
@@ -91,7 +96,8 @@
         "to_dict 返回的字典包含 priority",
         "测试用例: task.to_dict()['priority'] == 3"
       ],
-      "reference_fix": "在 to_dict 返回的字典中添加 'priority': self.priority"
+      "reference_fix": "在 to_dict 返回的字典中添加 'priority': self.priority",
+      "layer": "unit"
     },
     {
       "id": "fix-import",
@@ -106,7 +112,8 @@
         "文件中的 import 语句正确",
         "模块可以被正常 import"
       ],
-      "reference_fix": "修正 import 路径或添加缺失的依赖"
+      "reference_fix": "修正 import 路径或添加缺失的依赖",
+      "layer": "unit"
     },
     {
       "id": "fix-count-words",
@@ -121,7 +128,8 @@
         "count_words 对空文件返回 0",
         "测试用例: count_words(empty_file) == 0"
       ],
-      "reference_fix": "确保空行不会被计入单词数（当前实现已经正确处理空行，但需要验证空文件的情况）"
+      "reference_fix": "确保空行不会被计入单词数（当前实现已经正确处理空行，但需要验证空文件的情况）",
+      "layer": "unit"
     },
     {
       "id": "fix-capitalize-tabs",
@@ -136,7 +144,8 @@
         "capitalize_words 正确处理 tab 分隔的单词",
         "测试用例: capitalize_words('hello\\tworld') == 'Hello\\tWorld'"
       ],
-      "reference_fix": "将 s.split(' ') 改为 s.split() 以处理所有空白字符"
+      "reference_fix": "将 s.split(' ') 改为 s.split() 以处理所有空白字符",
+      "layer": "unit"
     },
     {
       "id": "fix-todo-complete",
@@ -151,7 +160,8 @@
         "complete 方法在设置 done=True 后调用 _save()",
         "测试用例: complete 后重新加载数据，done 状态应保持"
       ],
-      "reference_fix": "在 complete 方法中 todo.done = True 后添加 self._save()"
+      "reference_fix": "在 complete 方法中 todo.done = True 后添加 self._save()",
+      "layer": "unit"
     },
     {
       "id": "fix-divide-zero",
@@ -166,7 +176,8 @@
         "divide 方法在 b==0 时抛出 ValueError('除数不能为零')",
         "测试用例: divide(10, 0) raises ValueError"
       ],
-      "reference_fix": "在 divide 方法开头添加 if b == 0: raise ValueError('除数不能为零')"
+      "reference_fix": "在 divide 方法开头添加 if b == 0: raise ValueError('除数不能为零')",
+      "layer": "integration"
     },
     {
       "id": "fix-factorial",
@@ -181,7 +192,8 @@
         "factorial 方法正确计算阶乘",
         "测试用例: factorial(5) == 120"
       ],
-      "reference_fix": "将 range(1, n) 改为 range(1, n+1)"
+      "reference_fix": "将 range(1, n) 改为 range(1, n+1)",
+      "layer": "integration"
     },
     {
       "id": "fix-merge-configs",
@@ -196,7 +208,8 @@
         "嵌套字典被正确递归合并",
         "测试用例: base={'db':{'host':'localhost','port':5432}}, override={'db':{'port':3306}} → result['db']['host']=='localhost'"
       ],
-      "reference_fix": "将 result[key] = value 改为 result[key] = merge_configs(result[key], value) 当两者都是 dict 时"
+      "reference_fix": "将 result[key] = value 改为 result[key] = merge_configs(result[key], value) 当两者都是 dict 时",
+      "layer": "integration"
     },
     {
       "id": "fix-get-config-value",
@@ -211,7 +224,8 @@
         "当键不存在时返回默认值而非 None",
         "测试用例: get_config_value(config, 'b', 'fallback') == 'fallback'"
       ],
-      "reference_fix": "将 return default 改为 return default（当前代码已经有 return default，但需要检查是否被 None 覆盖）"
+      "reference_fix": "将 return default 改为 return default（当前代码已经有 return default，但需要检查是否被 None 覆盖）",
+      "layer": "integration"
     },
     {
       "id": "fix-replace-in-file",
@@ -226,7 +240,8 @@
         "replace_in_file 在 old==new 时返回 0",
         "测试用例: replace_in_file(path, 'a', 'a') == 0"
       ],
-      "reference_fix": "在函数开头添加 if old == new: return 0"
+      "reference_fix": "在函数开头添加 if old == new: return 0",
+      "layer": "integration"
     },
     {
       "id": "fix-append-line",
@@ -241,7 +256,8 @@
         "append_line 正确处理已带换行符的输入",
         "测试用例: append_line(path, 'second\\n') 不产生空行"
       ],
-      "reference_fix": "将 f.write(line + '\\n') 改为 f.write(line if line.endswith('\\n') else line + '\\n')"
+      "reference_fix": "将 f.write(line + '\\n') 改为 f.write(line if line.endswith('\\n') else line + '\\n')",
+      "layer": "integration"
     },
     {
       "id": "fix-build-url",
@@ -256,7 +272,8 @@
         "URL 参数被正确编码",
         "测试用例: build_url('/search', {'q': 'hello world'}) 包含 'q=hello+world'"
       ],
-      "reference_fix": "导入 urllib.parse.quote，将 f'{k}={v}' 改为 f'{k}={quote(v)}'"
+      "reference_fix": "导入 urllib.parse.quote，将 f'{k}={v}' 改为 f'{k}={quote(v)}'",
+      "layer": "integration"
     },
     {
       "id": "fix-parse-response",
@@ -271,7 +288,8 @@
         "错误响应包含 status 字段",
         "测试用例: parse_response('not json')['status'] == 400"
       ],
-      "reference_fix": "将 return {'error': 'Invalid JSON', 'raw': raw} 改为 return {'error': 'Invalid JSON', 'status': 400, 'raw': raw}"
+      "reference_fix": "将 return {'error': 'Invalid JSON', 'raw': raw} 改为 return {'error': 'Invalid JSON', 'status': 400, 'raw': raw}",
+      "layer": "integration"
     },
     {
       "id": "fix-list-by-priority",
@@ -286,7 +304,8 @@
         "list_by_priority 返回列表而非 None",
         "测试用例: result 是列表且按优先级降序排列"
       ],
-      "reference_fix": "将 return result.sort(...) 改为 return sorted(result, key=lambda t: t.priority, reverse=True)"
+      "reference_fix": "将 return result.sort(...) 改为 return sorted(result, key=lambda t: t.priority, reverse=True)",
+      "layer": "integration"
     },
     {
       "id": "fix-find-longest-line",
@@ -301,7 +320,8 @@
         "find_longest_line 返回第一个最长行",
         "测试用例: 多行同长时返回第一个"
       ],
-      "reference_fix": "将 if len(line) > len(longest) 改为 if len(line) >= len(longest)，或使用 min() 找第一个"
+      "reference_fix": "将 if len(line) > len(longest) 改为 if len(line) >= len(longest)，或使用 min() 找第一个",
+      "layer": "integration"
     },
     {
       "id": "add-validation",
@@ -317,7 +337,8 @@
         "subtract 方法校验参数类型",
         "测试用例: add('a', 1) raises TypeError"
       ],
-      "reference_fix": "在方法开头添加 if not isinstance(a, int) or not isinstance(b, int): raise TypeError('参数必须是整数')"
+      "reference_fix": "在方法开头添加 if not isinstance(a, int) or not isinstance(b, int): raise TypeError('参数必须是整数')",
+      "layer": "integration"
     },
     {
       "id": "fix-user-deactivate",
@@ -332,7 +353,8 @@
         "deactivate 方法设置 active=False 后记录时间",
         "测试用例: deactivate 后有停用时间记录"
       ],
-      "reference_fix": "在 deactivate 方法中添加 self.deactivated_at = datetime.now().isoformat()"
+      "reference_fix": "在 deactivate 方法中添加 self.deactivated_at = datetime.now().isoformat()",
+      "layer": "integration"
     },
     {
       "id": "fix-retry-request",
@@ -347,7 +369,8 @@
         "重试之间有 sleep 延迟",
         "测试用例: 重试间隔递增"
       ],
-      "reference_fix": "在 except 块中添加 import time; time.sleep(2 ** attempt)"
+      "reference_fix": "在 except 块中添加 import time; time.sleep(2 ** attempt)",
+      "layer": "stress"
     },
     {
       "id": "fix-multi-file-todo",
@@ -363,7 +386,8 @@
         "list_pending 返回 done=False 的项",
         "所有测试通过"
       ],
-      "reference_fix": "在 complete 中添加 self._save()，将 list_pending 中的 if t.done 改为 if not t.done"
+      "reference_fix": "在 complete 中添加 self._save()，将 list_pending 中的 if t.done 改为 if not t.done",
+      "layer": "stress"
     },
     {
       "id": "fix-config-all",
@@ -379,7 +403,8 @@
         "get_config_value 在键不存在时返回默认值",
         "所有测试通过"
       ],
-      "reference_fix": "递归合并嵌套字典，确保默认值正确传递"
+      "reference_fix": "递归合并嵌套字典，确保默认值正确传递",
+      "layer": "stress"
     },
     {
       "id": "fix-data-models-all",
@@ -396,7 +421,8 @@
         "list_by_priority 返回排序列表",
         "所有测试通过"
       ],
-      "reference_fix": "添加缺失字段到 to_dict，将 sort() 改为 sorted()"
+      "reference_fix": "添加缺失字段到 to_dict，将 sort() 改为 sorted()",
+      "layer": "stress"
     },
     {
       "id": "fix-file-processor-all",
@@ -413,7 +439,8 @@
         "find_longest_line 返回第一个最长行",
         "所有测试通过"
       ],
-      "reference_fix": "修复三个函数的边界情况处理"
+      "reference_fix": "修复三个函数的边界情况处理",
+      "layer": "stress"
     },
     {
       "id": "fix-string-utils-all",
@@ -431,7 +458,8 @@
         "truncate 为 '...' 留空间",
         "所有测试通过"
       ],
-      "reference_fix": "修复所有四个函数的 bug"
+      "reference_fix": "修复所有四个函数的 bug",
+      "layer": "stress"
     },
     {
       "id": "fix-api-client-all",
@@ -448,7 +476,8 @@
         "retry_request 有延迟",
         "所有测试通过"
       ],
-      "reference_fix": "修复所有三个方法"
+      "reference_fix": "修复所有三个方法",
+      "layer": "stress"
     },
     {
       "id": "fix-all-calculator",
@@ -466,7 +495,8 @@
         "类型校验抛出 TypeError",
         "所有测试通过"
       ],
-      "reference_fix": "修复所有四个 bug"
+      "reference_fix": "修复所有四个 bug",
+      "layer": "stress"
     }
   ]
 }

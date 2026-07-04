@@ -26,7 +26,8 @@ from app.core.config import settings
 from app.core.llm_client import LLMClient
 from app.evaluation.metrics import compute_metrics
 from app.evaluation.runner import EvaluationRunner
-from app.evaluation.schema import EvalResult
+from app.evaluation.schema import BaselineMode, EvalLayer, EvalResult
+from app.tools.code_edit import CodeEditTool
 from app.tools.git_diff import GitDiffTool
 from app.tools.git_status import GitStatusTool
 from app.tools.read_file import ReadFileTool
@@ -41,21 +42,30 @@ def _build_registry() -> ToolRegistry:
     registry.register(ReadFileTool())
     registry.register(SearchCodeTool())
     registry.register(WriteFileTool())
+    registry.register(CodeEditTool())
     registry.register(GitDiffTool())
     registry.register(GitStatusTool())
     registry.register(RunTestsTool())
     return registry
 
 
-def _agent_factory(workspace_root: str, max_tool_calls: int | None = None) -> ReActAgent:
+def _agent_factory(
+    workspace_root: str,
+    max_tool_calls: int | None = None,
+    baseline: BaselineMode = BaselineMode.REACT_FULL,
+) -> ReActAgent:
     llm = LLMClient(settings)
     registry = _build_registry()
-    return ReActAgent(
+    agent = ReActAgent(
         llm=llm,
         registry=registry,
         workspace_root=workspace_root,
         max_tool_calls=max_tool_calls or settings.max_tool_calls,
     )
+    # REACT_NO_MEMORY: disable memory injection
+    if baseline == BaselineMode.REACT_NO_MEMORY:
+        agent._build_memory_context = lambda task: ""
+    return agent
 
 
 def _print_result(result: EvalResult, index: int) -> None:
@@ -81,22 +91,40 @@ def main() -> None:
         "--output", default=str(_PROJECT_ROOT / "reports" / "eval_report.json"),
         help="输出报告路径",
     )
+    parser.add_argument(
+        "--layer", default=None, choices=["unit", "integration", "stress"],
+        help="评测层级过滤（unit / integration / stress）",
+    )
+    parser.add_argument(
+        "--baseline", default="react_full",
+        choices=["bare_llm", "react_no_memory", "react_full"],
+        help="基线模式（bare_llm / react_no_memory / react_full）",
+    )
     args = parser.parse_args()
 
     runner = EvaluationRunner()
 
+    # 解析参数
+    layer = EvalLayer(args.layer) if args.layer else None
+    baseline = BaselineMode(args.baseline)
+
     print("=" * 60)
     print("CodePilot Agent Evaluation")
+    print(f"  Baseline: {baseline.value}")
+    if layer:
+        print(f"  Layer:    {layer.value}")
     print("=" * 60)
 
     # 加载任务
     tasks = runner.load_tasks()
+    if layer:
+        tasks = [t for t in tasks if t.layer == layer]
     print(f"\nLoaded {len(tasks)} tasks")
 
     # 运行
     t0 = time.monotonic()
     results = asyncio.get_event_loop().run_until_complete(
-        runner.run_all(_agent_factory, task_ids=args.tasks)
+        runner.run_all(_agent_factory, task_ids=args.tasks, layer=layer, baseline=baseline)
     )
     total_duration = int((time.monotonic() - t0) * 1000)
 
@@ -136,12 +164,24 @@ def main() -> None:
         for cat, stats in metrics.success_by_category.items():
             print(f"    {cat}: {stats['rate']:.0%} ({stats['success']}/{stats['total']})")
 
+    if metrics.success_by_layer:
+        print("\n  By Layer:")
+        for layer_name, stats in metrics.success_by_layer.items():
+            print(f"    {layer_name}: {stats['rate']:.0%} ({stats['success']}/{stats['total']})")
+
+    if metrics.verification_pass_rate > 0 or metrics.edit_precision_rate > 0:
+        print("\n  Agent Metrics:")
+        print(f"    Verification Pass Rate: {metrics.verification_pass_rate:.1%}")
+        print(f"    Edit Precision Rate:    {metrics.edit_precision_rate:.1%}")
+
     # 保存 JSON 报告
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     report = {
-        "version": "2.0",
+        "version": "2.1",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "baseline": baseline.value,
+        "layer": layer.value if layer else "all",
         "tasks": [r.to_dict() for r in results],
         "metrics": metrics.to_dict(),
     }
@@ -150,7 +190,10 @@ def main() -> None:
 
     # 生成 Markdown 报告
     md_path = output_path.with_suffix(".md")
-    _generate_markdown_report(md_path, metrics, results, tasks, total_duration)
+    _generate_markdown_report(
+        md_path, metrics, results, tasks, total_duration,
+        baseline=baseline.value, layer=layer.value if layer else "all",
+    )
 
     print(f"\nJSON Report saved to: {output_path}")
     print(f"Markdown Report saved to: {md_path}")
@@ -163,6 +206,8 @@ def _generate_markdown_report(
     results: list[EvalResult],
     tasks: list[EvalTask],
     total_duration: int,
+    baseline: str = "react_full",
+    layer: str = "all",
 ) -> None:
     """生成 Markdown 格式的评测报告。"""
     task_map = {t.id: t for t in tasks}
@@ -171,6 +216,8 @@ def _generate_markdown_report(
         "# CodePilot Agent 评测报告",
         "",
         f"**生成时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"**基线模式**: `{baseline}`",
+        f"**评测层级**: `{layer}`",
         "",
         "## 核心指标",
         "",
@@ -186,6 +233,30 @@ def _generate_markdown_report(
         f"| 总耗时 | {total_duration}ms |",
         "",
     ]
+
+    # Agent-specific metrics
+    if metrics.verification_pass_rate > 0 or metrics.edit_precision_rate > 0:
+        lines.extend([
+            "## Agent 指标",
+            "",
+            f"| 指标 | 值 |",
+            f"|------|-----|",
+            f"| 验证通过率 | {metrics.verification_pass_rate:.1%} |",
+            f"| 精确编辑率 | {metrics.edit_precision_rate:.1%} |",
+            "",
+        ])
+
+    # Layer breakdown
+    if metrics.success_by_layer:
+        lines.extend([
+            "## 按评测层级分组",
+            "",
+            "| 层级 | 成功/总数 | 成功率 |",
+            "|------|-----------|--------|",
+        ])
+        for layer_name, stats in metrics.success_by_layer.items():
+            lines.append(f"| {layer_name} | {stats['success']}/{stats['total']} | {stats['rate']:.0%} |")
+        lines.append("")
 
     # 错误分布
     if metrics.error_distribution:

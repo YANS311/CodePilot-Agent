@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from app.evaluation.analyzer import analyze_error
-from app.evaluation.schema import EvalLayer, EvalResult, EvalTask
+from app.evaluation.schema import BaselineMode, EvalLayer, EvalResult, EvalTask
 from app.execution.local_runner import LocalExecutionRunner
 from app.memory.memory_manager import get_memory_manager
 
@@ -81,12 +81,14 @@ class EvaluationRunner:
         self,
         task: EvalTask,
         agent_factory,
+        baseline: BaselineMode = BaselineMode.REACT_FULL,
     ) -> EvalResult:
         """执行单个评测任务。
 
         Args:
             task: 评测任务定义。
             agent_factory: 可调用对象，接受 workspace_root 和 max_tool_calls 参数返回 ReActAgent。
+            baseline: 基线模式。
         """
         task_ws = self._prepare_workspace(task.id)
         t0 = time.monotonic()
@@ -96,10 +98,13 @@ class EvaluationRunner:
             max_calls = DIFFICULTY_BUDGET.get(task.difficulty, 20)
 
             # 创建指向独立 workspace 的 Agent
-            agent = agent_factory(str(task_ws), max_calls)
+            agent = agent_factory(str(task_ws), max_calls, baseline)
 
             # 执行 Agent
-            agent_result = await agent.run(task.task)
+            if baseline == BaselineMode.BARE_LLM:
+                agent_result = await self._run_bare_llm(agent, task)
+            else:
+                agent_result = await agent.run(task.task)
             duration = int((time.monotonic() - t0) * 1000)
 
             # 用 Runner 验证：只运行任务相关的测试
@@ -141,11 +146,35 @@ class EvaluationRunner:
         finally:
             self._cleanup_workspace(task.id)
 
+    async def _run_bare_llm(self, agent, task: EvalTask):
+        """Bare LLM baseline — call LLM directly without tools or agent loop.
+
+        This is the most conservative baseline: the LLM sees the task prompt
+        and returns a text response. No tools, no workspace interaction.
+        The resulting test_success will almost always be False (no code changed).
+        """
+        from app.models.tool import AgentStep
+
+        messages = [
+            {"role": "system", "content": "You are a helpful coding assistant. Analyze the task and provide a solution."},
+            {"role": "user", "content": task.task},
+        ]
+        response = await agent._llm.chat(messages)
+
+        # Build a minimal AgentRunResult
+        from app.agent.react_agent import AgentRunResult
+        return AgentRunResult(
+            answer=response.content or "",
+            tool_calls_count=0,
+            steps=[],
+        )
+
     async def run_all(
         self,
         agent_factory,
         task_ids: list[str] | None = None,
         layer: EvalLayer | None = None,
+        baseline: BaselineMode = BaselineMode.REACT_FULL,
     ) -> list[EvalResult]:
         """执行所有（或指定的）评测任务。
 
@@ -153,6 +182,7 @@ class EvaluationRunner:
             agent_factory: 可调用对象，接受 workspace_root 参数返回 ReActAgent。
             task_ids: 可选的任务 ID 列表。为 None 时执行全部。
             layer: 可选的评测层级过滤。为 None 时执行全部层级。
+            baseline: 基线模式。
         """
         tasks = self.load_tasks()
         if task_ids:
@@ -163,7 +193,7 @@ class EvaluationRunner:
         results = []
         for task in tasks:
             logger.info("Running task: %s (%s)", task.id, task.name)
-            result = await self.run_task(task, agent_factory)
+            result = await self.run_task(task, agent_factory, baseline)
             results.append(result)
             logger.info(
                 "  → success=%s, tests=%s, tools=%d, %dms",

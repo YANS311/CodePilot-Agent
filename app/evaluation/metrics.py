@@ -35,6 +35,11 @@ class EvalMetrics:
     success_by_difficulty: dict[str, dict] = field(default_factory=dict)
     # 按类别分组
     success_by_category: dict[str, dict] = field(default_factory=dict)
+    # 按 layer 分组
+    success_by_layer: dict[str, dict] = field(default_factory=dict)
+    # Agent-specific metrics (v0.4.5)
+    verification_pass_rate: float = 0.0  # tasks with verification that passed
+    edit_precision_rate: float = 0.0  # code_edit calls / total edit calls
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +58,9 @@ class EvalMetrics:
             "error_distribution": self.error_distribution,
             "success_by_difficulty": self.success_by_difficulty,
             "success_by_category": self.success_by_category,
+            "success_by_layer": self.success_by_layer,
+            "verification_pass_rate": round(self.verification_pass_rate, 4),
+            "edit_precision_rate": round(self.edit_precision_rate, 4),
         }
 
 
@@ -123,6 +131,32 @@ def compute_metrics(
     for c in by_category.values():
         c["rate"] = c["success"] / c["total"] if c["total"] else 0.0
 
+    # 按 layer 分组
+    by_layer: dict[str, dict] = {}
+    for r in results:
+        t = task_map.get(r.task_id)
+        layer = t.layer.value if t else "unknown"
+        if layer not in by_layer:
+            by_layer[layer] = {"total": 0, "success": 0}
+        by_layer[layer]["total"] += 1
+        if r.success:
+            by_layer[layer]["success"] += 1
+
+    for layer_data in by_layer.values():
+        layer_data["rate"] = layer_data["success"] / layer_data["total"] if layer_data["total"] else 0.0
+
+    # v0.4.5: Agent-specific metrics
+    # Verification pass rate: tasks that ran verification and passed
+    tasks_with_verification = sum(1 for r in results if r.verification_retries > 0 or r.verification_passed)
+    verification_passed = sum(1 for r in results if r.verification_passed)
+    verification_pass_rate = verification_passed / tasks_with_verification if tasks_with_verification else 0.0
+
+    # Edit precision rate: code_edit usage among all edit tool calls
+    code_edit_calls = sum(1 for r in results if r.code_edit_used)
+    write_file_calls = sum(1 for r in results if r.write_file_used)
+    total_edit_calls = code_edit_calls + write_file_calls
+    edit_precision_rate = code_edit_calls / total_edit_calls if total_edit_calls else 0.0
+
     return EvalMetrics(
         total_tasks=total,
         successful_tasks=successful,
@@ -139,4 +173,7 @@ def compute_metrics(
         error_distribution=error_distribution,
         success_by_difficulty=by_difficulty,
         success_by_category=by_category,
+        success_by_layer=by_layer,
+        verification_pass_rate=verification_pass_rate,
+        edit_precision_rate=edit_precision_rate,
     )
