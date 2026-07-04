@@ -138,22 +138,44 @@ docker-compose up       # Open http://localhost:8000
 
 ## Evaluation
 
-Controlled benchmark results on internal test suites:
+Layered evaluation with baseline comparison and benchmark reporting.
 
-| Benchmark | Tasks | Scope |
-|-----------|------:|-------|
-| Synthetic (Easy/Medium/Hard) | 30 | Bug fix / enhancement |
+### Benchmark Tasks
+
+| Layer | Tasks | Scope |
+|-------|------:|-------|
+| Unit (CI-deterministic) | 10 | Single-file bug fixes |
+| Integration | 12 | Multi-file, config, validation |
+| Stress | 8 | Multi-file, retry, recovery |
 | Real-World (3 repos, seeded bugs) | 15 | Cross-file, hidden bugs |
-| Stress Test (multi-file, recovery) | 10 | Complexity boundary |
 
-| Metric | Value | Notes |
-|--------|------:|-------|
-| Task Success Rate (Synthetic) | 90% | 30 controlled tasks |
-| Security Block Rate | 100% | Attack inputs in controlled test set |
-| Recovery Rate | Measured | Ability to recover from tool failures |
-| Tool Efficiency | Measured | Tool calls per successful task |
+### Baseline Modes
 
-> All metrics are controlled evaluation results, not production claims.
+| Mode | Description |
+|------|-------------|
+| `bare_llm` | LLM only, no tools, no agent loop (conservative baseline) |
+| `react_no_memory` | ReAct agent with memory disabled |
+| `react_full` | Full agent with memory, verification, surgical editing |
+
+### Benchmark Report
+
+Generate comparison reports from existing JSON (no eval re-run):
+
+```bash
+# From single report
+python scripts/generate_benchmark_report.py \
+  --from-json reports/eval_report.json \
+  --output-md docs/benchmark_report.md
+
+# Multi-baseline comparison
+python scripts/generate_benchmark_report.py \
+  --baseline-files reports/react_full.json reports/bare_llm.json \
+  --output-md docs/benchmark_report.md
+```
+
+Missing fields are shown as `not_available` — never fabricated. CI/mock reports include an explicit disclaimer.
+
+> All metrics are controlled evaluation results, not production claims. See [docs/benchmark_report.md](docs/benchmark_report.md).
 
 ## Real Usage Case Studies
 
@@ -196,7 +218,7 @@ Detailed engineering docs covering Docker operations, failure modes, and operati
 ## Run Tests
 
 ```bash
-pytest tests/ -v    # 516 passed, 2 skipped
+pytest tests/ -v    # 600 passed, 2 skipped (v0.5.0)
 ```
 
 ## Keywords
