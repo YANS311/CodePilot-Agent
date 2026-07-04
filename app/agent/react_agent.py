@@ -9,6 +9,7 @@ from typing import Any, Optional
 from app.agent.budget import ToolBudget
 from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.verification import VerificationPolicy
 from app.memory.memory_manager import get_memory_manager
 from app.router.intent_router import get_intent_router, INTENT_REPO, INTENT_SECURITY
 from app.security.tool_guardrail import ToolGuardrail
@@ -109,6 +110,10 @@ class AgentRunResult:
     no_code_change_reason: str = ""
     # D36: error event tracking
     error_events: list[AgentErrorEvent] = field(default_factory=list)
+    # v0.4.3: self-verification tracking
+    verification_passed: bool = False
+    verification_retries: int = 0
+    test_result: str = ""
 
 
 class ReActAgent:
@@ -127,6 +132,7 @@ class ReActAgent:
         registry: ToolRegistry,
         workspace_root: str,
         max_tool_calls: int = MAX_TOOL_CALLS,
+        verification_policy: VerificationPolicy | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -139,6 +145,7 @@ class ReActAgent:
         self._index: Optional[WorkspaceIndex] = None
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
+        self._verification = verification_policy or VerificationPolicy()
 
     async def run(self, task: str) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
@@ -170,8 +177,6 @@ class ReActAgent:
 
         # 构建 Workspace 索引并注入上下文
         index_context = self._build_index_context()
-
-        # D32: Inject memory context
         mem_ctx = self._build_memory_context(task)
 
         messages: list[dict[str, Any]] = [
@@ -180,13 +185,32 @@ class ReActAgent:
         ]
 
         tools_schema = self._registry.get_schemas()
+        result = await self._run_core(task, messages, tools_schema)
+
+        # ── Self-Verification Loop ──
+        if self._verification.enabled and result.wrote_file:
+            result = await self._verify(task, result, messages, tools_schema)
+
+        self._write_task_memory(task, result, result.steps)
+        return result
+
+    async def _run_core(
+        self,
+        task: str,
+        messages: list[dict[str, Any]],
+        tools_schema: list[dict],
+    ) -> AgentRunResult:
+        """Core agent loop — Think → Act → Observe.
+
+        Reusable for verification retries: passes existing message history
+        so the agent sees prior context plus the test failure.
+        """
         tool_results: list[ToolResult] = []
         thoughts: list[str] = []
         steps: list[AgentStep] = []
         tool_calls_count = 0
 
         for iteration in range(self._max_tool_calls):
-            # 注入预算提示
             budget_prompt = self._budget.get_budget_prompt()
             if budget_prompt:
                 messages.append({"role": "system", "content": budget_prompt})
@@ -195,11 +219,9 @@ class ReActAgent:
                 messages, tools=tools_schema if tools_schema else None
             )
 
-            # 如果 LLM 给出了纯文本回答（无 tool_calls），检查是否有伪造工具调用
             if not response.has_tool_calls:
                 answer = response.content or ""
 
-                # Guardrail: 检测文本中伪造的工具调用
                 if self._has_fake_tool_calls(answer) and not self._has_drift_corrected:
                     self._has_drift_corrected = True
                     logger.warning("Detected fake tool calls in answer, injecting correction")
@@ -214,7 +236,6 @@ class ReActAgent:
                     })
                     continue
 
-                # Guardrail: Completion Chain — 声称完成但未执行 write_file
                 if (
                     not self._has_completion_corrected
                     and self._has_completion_claim(answer)
@@ -235,7 +256,6 @@ class ReActAgent:
 
                 messages.append({"role": "assistant", "content": answer})
 
-                # D34: Track write_file and warn if code modification task didn't write
                 has_write = self._has_write_file_in_trajectory(steps)
                 is_code_mod = self._is_code_modification_task(task)
                 no_reason = ""
@@ -243,7 +263,7 @@ class ReActAgent:
                     no_reason = "Agent did not call write_file for code modification task"
                     logger.warning("Code modification task without write_file: %s", task[:80])
 
-                result = AgentRunResult(
+                return AgentRunResult(
                     answer=response.content or "",
                     tool_calls_count=tool_calls_count,
                     tool_results=tool_results,
@@ -253,11 +273,9 @@ class ReActAgent:
                     security_warnings=self._guardrail.warnings,
                     wrote_file=has_write,
                     no_code_change_reason=no_reason,
+                    error_events=list(self._error_events),
                 )
-                self._write_task_memory(task, result, steps)
-                return result
 
-            # 有 tool_calls：提取 thought 并构建 assistant 消息
             thought = response.content or ""
             if thought:
                 thoughts.append(thought)
@@ -265,9 +283,7 @@ class ReActAgent:
             assistant_msg = self._build_assistant_message(response)
             messages.append(assistant_msg)
 
-            # 逐个执行 tool_call
             for tc_info in response.tool_calls:
-                # 检查预算
                 if self._budget.should_stop():
                     logger.warning("Budget exhausted, stopping tool calls")
                     break
@@ -275,15 +291,12 @@ class ReActAgent:
                 tool_calls_count += 1
                 self._budget.consume()
 
-                # 重复搜索检查
                 if tc_info.name == "search_code":
                     query = tc_info.arguments.get("query", "")
                     if self._budget.is_duplicate_search(query):
-                        # 注入警告但不阻止执行
                         logger.info("Duplicate search detected: %s", query)
                     self._budget.record_search(query)
 
-                # 记录已读取的文件
                 if tc_info.name == "read_file":
                     path = tc_info.arguments.get("path", "")
                     self._budget.record_read(path)
@@ -302,11 +315,9 @@ class ReActAgent:
                 )
                 tool_results.append(result)
 
-                # 从 search_code 结果中缓存文件路径
                 if tc_info.name == "search_code" and result.success:
                     self._extract_and_cache_paths(tc_info.arguments.get("query", ""), result.output)
 
-                # 构建 AgentStep
                 steps.append(AgentStep(
                     step_id=tool_calls_count,
                     thought=thought,
@@ -317,7 +328,6 @@ class ReActAgent:
                     success=result.success,
                 ))
 
-                # 构造 tool role 消息追加到对话
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_info.id,
@@ -327,7 +337,7 @@ class ReActAgent:
             if tool_calls_count >= self._max_tool_calls:
                 break
 
-        # 达到上限：发一次不含 tools 的请求，让 LLM 基于已有信息总结
+        # Budget exhausted: ask LLM to summarize
         final_response = await self._llm.chat(messages)
         has_write = self._has_write_file_in_trajectory(steps)
         is_code_mod = self._is_code_modification_task(task)
@@ -336,7 +346,7 @@ class ReActAgent:
             no_reason = "Agent exhausted tool calls without write_file"
             logger.warning("Budget exhausted without write_file for code modification task")
 
-        result = AgentRunResult(
+        return AgentRunResult(
             answer=final_response.content or "[达到最大工具调用次数，未能生成回答]",
             tool_calls_count=tool_calls_count,
             tool_results=tool_results,
@@ -348,7 +358,121 @@ class ReActAgent:
             no_code_change_reason=no_reason,
             error_events=list(self._error_events),
         )
-        self._write_task_memory(task, result, steps)
+
+    async def _verify(
+        self,
+        task: str,
+        result: AgentRunResult,
+        messages: list[dict[str, Any]],
+        tools_schema: list[dict],
+    ) -> AgentRunResult:
+        """Post-write verification loop: run tests, retry on failure.
+
+        After the agent writes a file, automatically run run_tests.
+        If tests pass → done. If fail → inject failure as Observation,
+        let the agent continue fixing. Up to max_retries rounds.
+        """
+        target = self._verification.test_command or ""
+        retries = 0
+
+        while retries <= self._verification.max_retries:
+            logger.info("Verification attempt %d/%d", retries + 1, self._verification.max_retries + 1)
+
+            # Run tests via registry
+            test_tc = ToolCall(
+                id=f"verify_{retries}",
+                name="run_tests",
+                arguments={"target": target} if target else {},
+            )
+            test_result = await self._registry.execute(
+                test_tc, self._workspace_root, guardrail=self._guardrail
+            )
+            tool_calls_count = result.tool_calls_count + 1
+
+            # Record verification step
+            verify_step = AgentStep(
+                step_id=tool_calls_count,
+                thought="[verification] Running tests after write_file",
+                action=f"run_tests(target={target!r})",
+                tool_name="run_tests",
+                tool_args={"target": target} if target else {},
+                observation=test_result.output,
+                success=test_result.success,
+            )
+            result.steps.append(verify_step)
+            result.tool_results.append(test_result)
+
+            # Parse test result
+            test_passed = test_result.success
+            test_output = test_result.output
+
+            if test_passed:
+                result.verification_passed = True
+                result.verification_retries = retries
+                result.test_result = test_output
+                result.tool_calls_count = tool_calls_count
+                logger.info("Verification passed on attempt %d", retries + 1)
+                return result
+
+            # Tests failed — record error event
+            self._error_events.append(AgentErrorEvent(
+                module="verification",
+                error_type="TestFailure",
+                context=f"Verification attempt {retries + 1} failed",
+                tool_name="run_tests",
+                recovery_action="retry" if retries < self._verification.max_retries else "max_retries_exhausted",
+            ))
+
+            if retries >= self._verification.max_retries:
+                # Max retries exhausted
+                result.verification_passed = False
+                result.verification_retries = retries
+                result.test_result = test_output
+                result.tool_calls_count = tool_calls_count
+                result.error_events = list(self._error_events)
+                logger.warning(
+                    "Verification failed after %d retries", self._verification.max_retries
+                )
+                return result
+
+            # Inject test failure as Observation for agent to continue
+            logger.info("Tests failed, injecting failure and retrying")
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"[自动验证] 测试未通过:\n{test_output}\n\n"
+                    "请根据测试失败信息继续修复代码。"
+                ),
+            })
+
+            # Continue the agent loop with remaining budget
+            remaining = self._max_tool_calls - tool_calls_count
+            if remaining <= 0:
+                result.verification_passed = False
+                result.verification_retries = retries
+                result.test_result = test_output
+                result.tool_calls_count = tool_calls_count
+                result.error_events = list(self._error_events)
+                logger.warning("Budget exhausted during verification")
+                return result
+
+            # Let the agent continue fixing
+            continuation = await self._run_core(task, messages, tools_schema)
+
+            # Merge continuation into result
+            result.answer = continuation.answer
+            result.tool_calls_count = tool_calls_count + continuation.tool_calls_count
+            result.tool_results.extend(continuation.tool_results)
+            result.steps.extend(continuation.steps)
+            result.thoughts.extend(continuation.thoughts)
+            result.messages = continuation.messages
+            result.error_events = list(self._error_events)
+
+            retries += 1
+
+        # Should not reach here, but safety fallback
+        result.verification_passed = False
+        result.verification_retries = retries
         return result
 
     async def _run_repo_mode(self, task: str) -> AgentRunResult:

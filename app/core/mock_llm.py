@@ -21,7 +21,13 @@ class MockLLMProvider:
 
     Returns predictable responses without calling any external API.
     Used when CODEPILOT_CI_MODE=true.
+
+    Tracks call count so verification tests can simulate:
+    call 0 → write_file, call 1+ → text (done).
     """
+
+    def __init__(self) -> None:
+        self._call_count = 0
 
     async def chat(
         self,
@@ -35,6 +41,7 @@ class MockLLMProvider:
         If tools are provided, returns a tool_call for the first tool.
         Otherwise returns a generic text response.
         """
+        self._call_count += 1
         if tools and len(tools) > 0:
             return self._tool_call_response(messages, tools)
         return self._text_response(messages)
@@ -42,12 +49,19 @@ class MockLLMProvider:
     def _tool_call_response(
         self, messages: list[dict[str, Any]], tools: list[dict]
     ) -> ChatResponse:
-        """Generate a deterministic tool call."""
+        """Generate a deterministic tool call.
+
+        After the first call, return text instead of another tool call
+        so the agent loop terminates. This simulates: call 0 = write code,
+        call 1+ = summarize result.
+        """
+        if self._call_count > 1:
+            return self._text_response(messages)
+
         tool = tools[0]
         func = tool.get("function", {})
         tool_name = func.get("name", "read_file")
 
-        # Build deterministic arguments based on tool name
         args = self._default_args(tool_name, messages)
         tc_id = f"mock_{hashlib.md5(tool_name.encode()).hexdigest()[:8]}"
 
