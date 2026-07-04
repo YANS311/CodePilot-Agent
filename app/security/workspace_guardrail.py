@@ -33,6 +33,8 @@ def check_file_access(
         return _check_read(args, workspace_root)
     elif tool_name == "write_file":
         return _check_write(args, workspace_root)
+    elif tool_name == "code_edit":
+        return _check_write(args, workspace_root)  # same checks as write_file
     elif tool_name == "search_code":
         return _check_search(args)
     elif tool_name == "run_tests":

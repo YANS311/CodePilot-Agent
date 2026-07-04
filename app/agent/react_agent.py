@@ -623,8 +623,8 @@ class ReActAgent:
 
     @staticmethod
     def _has_write_file_in_trajectory(steps: list[AgentStep]) -> bool:
-        """检查执行轨迹中是否调用过 write_file。"""
-        return any(s.tool_name == "write_file" for s in steps)
+        """检查执行轨迹中是否调用过 write_file 或 code_edit。"""
+        return any(s.tool_name in ("write_file", "code_edit") for s in steps)
 
     @staticmethod
     def _is_code_modification_task(task: str) -> bool:

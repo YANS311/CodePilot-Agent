@@ -53,6 +53,17 @@ def _validate_tool_args(
         if len(query.strip()) < 2:
             return "错误: query 长度必须 >= 2"
 
+    elif tool_name == "code_edit":
+        path = args.get("path", "")
+        if not path or not path.strip():
+            return "错误: path 参数不能为空"
+        old = args.get("old", "")
+        if not old:
+            return "错误: old 参数不能为空"
+        new = args.get("new", None)
+        if new is None:
+            return "错误: new 参数不能为空（可为空字符串表示删除）"
+
     return None
 
 

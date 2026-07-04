@@ -19,7 +19,7 @@ CodePilot is an interview-ready engineering prototype that demonstrates a ReAct-
 | Layer | What it does |
 |-------|-------------|
 | **Agent** | ReAct loop (Think -> Act -> Observe) with hybrid intent routing |
-| **Tool** | 6 tools: search, read, write, run_tests, git_diff, git_status |
+| **Tool** | 7 tools: search, read, write, code_edit, run_tests, git_diff, git_status |
 | **Memory** | Lightweight hybrid memory: structured (keyword) + vector (FAISS) |
 | **Routing** | 3-layer intent router: rule -> embedding -> LLM fallback |
 | **Concurrency** | Workspace-level lock with FIFO queue |
@@ -45,7 +45,7 @@ CodePilot is an interview-ready engineering prototype that demonstrates a ReAct-
             v            v            v
       +----------+ +----------+ +----------+
       |  Tools   | | Execution| |Workspace |
-      | 6 tools  | | Local/   | |Index +   |
+      | 7 tools  | | Local/   | |Index +   |
       | + guard  | | Docker   | |Lock      |
       +----------+ +----------+ +----------+
                          |

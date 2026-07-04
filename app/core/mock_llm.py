@@ -95,6 +95,8 @@ class MockLLMProvider:
             return {"path": "examples/buggy_calculator.py", "content": "# fixed"}
         if tool_name == "run_tests":
             return {"target": "tests/"}
+        if tool_name == "code_edit":
+            return {"path": "examples/buggy_calculator.py", "old": "def subtract(a, b): return a + b", "new": "def subtract(a, b): return a - b"}
         if tool_name == "git_diff":
             return {}
         if tool_name == "git_status":
