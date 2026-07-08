@@ -7,4 +7,5 @@ httpx
 numpy
 sentence-transformers
 python-multipart
+pytest
 pytest-asyncio

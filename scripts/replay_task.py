@@ -191,7 +191,7 @@ async def replay_task(task_id: str) -> EvalResult:
         from app.evaluation.runner import DIFFICULTY_BUDGET
         max_calls = DIFFICULTY_BUDGET.get(task.difficulty, 20)
         agent = _agent_factory(str(task_ws), max_calls)
-        agent_result = await agent.run(task.task)
+        agent_result = await agent.run(runner._build_agent_prompt(task))
         duration = int((time.monotonic() - t0) * 1000)
 
         # 运行测试

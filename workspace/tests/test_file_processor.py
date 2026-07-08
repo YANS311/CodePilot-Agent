@@ -91,7 +91,7 @@ class TestAppendLine:
             append_line(path, "second")
             with open(path) as f:
                 lines = f.readlines()
-            assert lines == ["first", "second\n"]
+            assert lines == ["first\n", "second\n"]
         finally:
             os.unlink(path)
 
@@ -103,6 +103,6 @@ class TestAppendLine:
             append_line(path, "second\n")
             with open(path) as f:
                 lines = f.readlines()
-            assert lines == ["first", "second\n"]
+            assert lines == ["first\n", "second\n"]
         finally:
             os.unlink(path)

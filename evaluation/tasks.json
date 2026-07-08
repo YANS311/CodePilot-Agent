@@ -248,15 +248,15 @@
       "name": "修复 append_line 双重换行",
       "difficulty": "medium",
       "category": "bug-fix",
-      "task": "修复 workspace/examples/file_processor.py 中 append_line 当 line 已有换行符时产生双重换行",
+      "task": "修复 examples/file_processor.py 中 append_line 当 line 已有换行符时产生双重换行；如果原文件末尾没有换行符，应先补一个换行，再追加规范化后的 line",
       "file": "examples/file_processor.py",
       "test_target": "tests/test_file_processor.py::TestAppendLine::test_double_newline",
-      "expected_behavior": "append_line 不应产生双重换行",
+      "expected_behavior": "append_line 不应产生双重换行，并且在原文件末尾没有换行符时仍应追加为新行",
       "success_criteria": [
         "append_line 正确处理已带换行符的输入",
         "测试用例: append_line(path, 'second\\n') 不产生空行"
       ],
-      "reference_fix": "将 f.write(line + '\\n') 改为 f.write(line if line.endswith('\\n') else line + '\\n')",
+      "reference_fix": "写入前将 line 规范化为 line.rstrip('\\n') + '\\n'；如果文件非空且末尾不是换行符，先写入 '\\n'",
       "layer": "integration"
     },
     {
@@ -361,7 +361,7 @@
       "name": "修复 retry_request 无延迟",
       "difficulty": "hard",
       "category": "bug-fix",
-      "task": "修复 workspace/examples/api_client.py 中 retry_request 重试之间没有延迟",
+      "task": "修复 examples/api_client.py 中 retry_request 重试之间没有延迟",
       "file": "examples/api_client.py",
       "test_target": "tests/test_api_client.py::TestRetryRequest",
       "expected_behavior": "retry_request 应在重试之间添加延迟",
@@ -429,7 +429,7 @@
       "name": "修复 file_processor 多个 bug",
       "difficulty": "hard",
       "category": "bug-fix",
-      "task": "修复 workspace/examples/file_processor.py 中 replace_in_file、append_line 和 find_longest_line 三个 bug",
+      "task": "修复 examples/file_processor.py 中 replace_in_file、append_line 和 find_longest_line 三个 bug",
       "file": "examples/file_processor.py",
       "test_target": "tests/test_file_processor.py",
       "expected_behavior": "所有函数应正确处理边界情况",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import shutil
@@ -100,7 +101,96 @@ class TestTasksLoading:
             assert t.difficulty in ("easy", "medium", "hard")
 
 
+    def test_task_test_targets_exist_in_workspace_seed(self):
+        runner = EvaluationRunner()
+        tasks = runner.load_tasks()
+        missing = []
+
+        for task in tasks:
+            if not task.test_target:
+                continue
+            parts = task.test_target.split("::")
+            test_file = PROJECT_ROOT / "workspace" / parts[0]
+            if not test_file.exists():
+                missing.append(f"{task.id}: missing file {parts[0]}")
+                continue
+
+            tree = ast.parse(test_file.read_text(encoding="utf-8"))
+            classes = {
+                node.name: node
+                for node in tree.body
+                if isinstance(node, ast.ClassDef)
+            }
+            functions = {
+                node.name
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+            }
+
+            if len(parts) >= 2:
+                target = parts[1]
+                if target.startswith("Test"):
+                    if target not in classes:
+                        missing.append(f"{task.id}: missing class {target}")
+                        continue
+                    if len(parts) >= 3:
+                        methods = {
+                            node.name
+                            for node in classes[target].body
+                            if isinstance(node, ast.FunctionDef)
+                        }
+                        if parts[2] not in methods:
+                            missing.append(
+                                f"{task.id}: missing method {target}::{parts[2]}"
+                            )
+                elif target not in functions:
+                    missing.append(f"{task.id}: missing function {target}")
+
+        assert missing == []
+
 # ═══════════════════════════════════════════
+
+
+class TestEvalPromptContext:
+    def test_build_agent_prompt_includes_eval_context(self):
+        runner = EvaluationRunner()
+        task = EvalTask(
+            id="ctx-test",
+            name="Context Test",
+            task="Fix the bug",
+            difficulty="hard",
+            category="bug-fix",
+            file="examples/file_processor.py",
+            test_target="tests/test_file_processor.py",
+            expected_behavior="handles edge cases",
+            success_criteria=["replace returns 0", "append avoids blank lines"],
+            reference_fix="secret solution",
+        )
+
+        prompt = runner._build_agent_prompt(task)
+
+        assert prompt.startswith("Fix the bug")
+        assert "Evaluation context:" in prompt
+        assert "examples/file_processor.py" in prompt
+        assert "tests/test_file_processor.py" in prompt
+        assert "handles edge cases" in prompt
+        assert "replace returns 0" in prompt
+        assert "append avoids blank lines" in prompt
+        assert "workspace/examples" not in prompt
+        assert "secret solution" not in prompt
+
+    def test_build_agent_prompt_without_metadata_returns_task(self):
+        runner = EvaluationRunner()
+        task = EvalTask(
+            id="plain",
+            name="Plain",
+            task="Just answer",
+            difficulty="easy",
+            category="analysis",
+        )
+
+        assert runner._build_agent_prompt(task) == "Just answer"
+
 # 4. workspace isolation
 # ═══════════════════════════════════════════
 
