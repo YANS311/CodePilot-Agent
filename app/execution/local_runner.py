@@ -73,10 +73,12 @@ class LocalExecutionRunner(BaseExecutionRunner):
             )
 
         duration = int((time.monotonic() - t0) * 1000)
-        stdout_str = result.stdout.decode("utf-8", errors="replace")[:_MAX_OUTPUT]
-        stderr_str = result.stderr.decode("utf-8", errors="replace")[:_MAX_OUTPUT]
+        full_stdout = result.stdout.decode("utf-8", errors="replace")
+        full_stderr = result.stderr.decode("utf-8", errors="replace")
+        stdout_str = full_stdout[:_MAX_OUTPUT]
+        stderr_str = full_stderr[:_MAX_OUTPUT]
 
-        passed, failed = _parse_summary(stdout_str)
+        passed, failed = _parse_summary(full_stdout)
 
         return ExecutionResult(
             success=result.returncode == 0,
@@ -96,10 +98,13 @@ def _parse_summary(output: str) -> tuple[int, int]:
 
     m_passed = re.search(r"(\d+) passed", output)
     m_failed = re.search(r"(\d+) failed", output)
+    m_errors = re.search(r"(\d+) errors?", output)
 
     if m_passed:
         passed = int(m_passed.group(1))
     if m_failed:
         failed = int(m_failed.group(1))
+    if m_errors:
+        failed += int(m_errors.group(1))
 
     return passed, failed

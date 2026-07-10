@@ -84,9 +84,8 @@ class TestRunTestsFailure:
 
 class TestRunTestsTimeout:
     def test_timeout_message(self):
-        """验证超时返回正确的错误信息。"""
+        """Timeouts are returned as JSON with an error field."""
         tool = _make_tool()
-        # 超时测试：创建一个无限循环的测试
         ws = Path(WORKSPACE)
         test_file = ws / "test_infinite.py"
         test_file.write_text(
@@ -97,15 +96,11 @@ class TestRunTestsTimeout:
             result = asyncio.run(
                 tool.run(workspace_root=WORKSPACE, target="test_infinite.py")
             )
-            # timeout returns a plain error string, not JSON
-            assert "超时" in result or "Timeout" in result or "错误" in result
+            data = json.loads(result)
+            assert data["success"] is False
+            assert data["error"]
         finally:
             test_file.unlink(missing_ok=True)
-
-
-# ═══════════════════════════════════════════
-# 4. invalid target
-# ═══════════════════════════════════════════
 
 
 class TestRunTestsInvalid:
@@ -114,19 +109,20 @@ class TestRunTestsInvalid:
         result = asyncio.run(
             tool.run(workspace_root=WORKSPACE, target="../../etc/passwd")
         )
-        assert "错误" in result
-        assert "超出" in result
+        data = json.loads(result)
+        assert data["success"] is False
+        assert data["error"]
 
     def test_nonexistent_workspace(self):
         tool = _make_tool()
         result = asyncio.run(
             tool.run(workspace_root="/nonexistent/path")
         )
-        assert "错误" in result
-        assert "不存在" in result
+        data = json.loads(result)
+        assert data["success"] is False
+        assert data["error"]
 
 
-# ═══════════════════════════════════════════
 # 5. output truncation
 # ═══════════════════════════════════════════
 
