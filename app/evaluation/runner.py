@@ -77,6 +77,35 @@ class EvaluationRunner:
         if task_ws.exists():
             shutil.rmtree(task_ws)
 
+    def _build_agent_prompt(self, task: EvalTask) -> str:
+        """Build the prompt passed to the agent for an eval task."""
+        context: list[str] = []
+        if task.file:
+            context.append(
+                f"- Target file: `{task.file}`. Use this path directly; "
+                "it is already relative to the workspace root."
+            )
+        if task.test_target:
+            context.append(f"- Verification target: `{task.test_target}`.")
+        if task.expected_behavior:
+            context.append(f"- Expected behavior: {task.expected_behavior}")
+        if task.success_criteria:
+            criteria = "\n".join(
+                f"  {index}. {item}"
+                for index, item in enumerate(task.success_criteria, 1)
+            )
+            context.append(f"- Success criteria:\n{criteria}")
+
+        if not context:
+            return task.task
+
+        return (
+            f"{task.task}\n\n"
+            "Evaluation context:\n"
+            + "\n".join(context)
+            + "\n\nUse the provided file and test target before broad searching."
+        )
+
     async def run_task(
         self,
         task: EvalTask,
@@ -104,7 +133,7 @@ class EvaluationRunner:
             if baseline == BaselineMode.BARE_LLM:
                 agent_result = await self._run_bare_llm(agent, task)
             else:
-                agent_result = await agent.run(task.task)
+                agent_result = await agent.run(self._build_agent_prompt(task))
             duration = int((time.monotonic() - t0) * 1000)
 
             # 用 Runner 验证：只运行任务相关的测试
@@ -157,7 +186,7 @@ class EvaluationRunner:
 
         messages = [
             {"role": "system", "content": "You are a helpful coding assistant. Analyze the task and provide a solution."},
-            {"role": "user", "content": task.task},
+            {"role": "user", "content": self._build_agent_prompt(task)},
         ]
         response = await agent._llm.chat(messages)
 

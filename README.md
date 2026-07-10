@@ -177,6 +177,23 @@ Missing fields are shown as `not_available` — never fabricated. CI/mock report
 
 > All metrics are controlled evaluation results, not production claims. See [docs/benchmark_report.md](docs/benchmark_report.md).
 
+### Failed-task Replay Validation
+
+The previous 3 failed evaluation tasks were replayed locally with the `mini_coding_agent` conda environment after tightening test coverage and eval task context:
+
+```bash
+C:\Users\A\anaconda3\envs\mini_coding_agent\python.exe scripts/replay_task.py \
+  fix-retry-request fix-append-line fix-file-processor-all
+```
+
+| Task | Result | Tool Calls | What changed |
+|------|--------|-----------:|--------------|
+| `fix-retry-request` | PASS | 5 | Added the missing retry backoff test target. |
+| `fix-append-line` | PASS | 6 | Corrected newline expectations and clarified append behavior. |
+| `fix-file-processor-all` | PASS | 6 | Injected target file/test context to reduce wasted search steps. |
+
+The replay traces are stored under `reports/replays/`. This validates that the known `test_infrastructure`, `file_modification`, and `planning` failures now have a reproducible recovery path.
+
 ## Real Usage Case Studies
 
 Self-tested execution traces documenting how the agent handles real coding tasks — including failures and recovery.

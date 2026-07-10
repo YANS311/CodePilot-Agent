@@ -1,5 +1,8 @@
 """Tests for api_client module."""
 
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
 from examples.api_client import APIClient
 
 
@@ -34,3 +37,24 @@ class TestGet:
         result = client.get("/status/404")
         assert "error" in result
         assert result["status"] == 404
+
+
+class TestRetryRequest:
+    def test_retries_with_exponential_backoff(self):
+        client = APIClient("https://api.example.com")
+        attempts = []
+
+        def fail_get(path):
+            attempts.append(path)
+            raise RuntimeError("temporary failure")
+
+        sleep = Mock()
+        with patch.object(client, "get", side_effect=fail_get), patch(
+            "examples.api_client.time", SimpleNamespace(sleep=sleep), create=True
+        ):
+            result = client.retry_request("/unstable", max_retries=3)
+
+        assert attempts == ["/unstable", "/unstable", "/unstable"]
+        assert sleep.call_count == 2
+        assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
+        assert "Failed after 3 retries" in result["error"]
