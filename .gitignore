@@ -23,6 +23,8 @@ htmlcov/
 # Evaluation runtime
 workspace_eval/
 reports/eval_report.json
+benchmarks/real_world/reports/eval_*.json
+benchmarks/real_world/reports/eval_*.md
 
 # User uploads
 workspace/uploads/
