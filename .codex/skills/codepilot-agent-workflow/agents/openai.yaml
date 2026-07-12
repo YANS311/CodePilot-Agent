@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodePilot Agent Workflow"
+  short_description: "Run CodePilot eval, CI, and PR workflows."
+  default_prompt: "Use $codepilot-agent-workflow to plan, verify, and ship a CodePilot Agent change."
