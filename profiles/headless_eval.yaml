@@ -1,0 +1,16 @@
+profile:
+  name: "codepilot-eval"
+  version: "2.0.0"
+  description: "面向 Headless 自动化评测的高速纯净 Profile"
+
+plugins:
+  - name: "model_adapter"
+  - name: "native_tools"
+  - name: "guardrails"
+    config:
+      max_file_reads: 100
+  - name: "react_orchestrator"
+    config:
+      workspace_root: "./workspace_eval"
+      max_tool_calls: 15
+      enable_verification: true
