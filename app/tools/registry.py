@@ -94,6 +94,30 @@ class ToolRegistry:
         """导出所有工具的 OpenAI function calling schema。"""
         return [t.to_openai_schema() for t in self._tools.values()]
 
+    def get_tools_metadata(self) -> list[dict[str, Any]]:
+        """导出所有已注册工具的统一元数据（包含 native 与 mcp 工具信息）。"""
+        results: list[dict[str, Any]] = []
+        for t in self._tools.values():
+            if hasattr(t, "to_metadata") and callable(getattr(t, "to_metadata")):
+                results.append(t.to_metadata())
+            else:
+                results.append({
+                    "name": t.name,
+                    "description": t.description,
+                    "source": "native",
+                    "server": "builtin",
+                    "original_name": t.name,
+                    "parameters": t.parameters,
+                    "enabled": True,
+                })
+        return results
+
+    def mount_mcp_registry(self, mcp_registry: Any) -> int:
+        """从 MCPRegistry 批量挂载工具。"""
+        if hasattr(mcp_registry, "mount_to_tool_registry"):
+            return mcp_registry.mount_to_tool_registry(self)
+        return 0
+
     async def execute(
         self, tool_call: ToolCall, workspace_root: str,
         guardrail=None,
