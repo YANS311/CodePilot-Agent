@@ -246,6 +246,10 @@ class MCPRegistry:
         """获取已加载的 MCPTool。"""
         return self._tools.get(name)
 
+    def list_servers(self) -> List[str]:
+        """返回当前所有已注册的 MCP Server 名称。"""
+        return list(self._clients.keys())
+
     def list_tools(self) -> List[MCPTool]:
         """返回当前所有已挂载的 MCPTool 实例。"""
         return list(self._tools.values())
