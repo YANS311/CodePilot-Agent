@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
 import pytest
 
@@ -15,8 +14,8 @@ from app.agent.react_agent import ReActAgent
 from app.core.config import Settings
 from app.core.kernel import AgentContext, PluginManager
 from app.core.llm_client import LLMClient
-from app.mcp.client import BaseTransport, MCPClient
-from app.mcp.registry import MCPRegistry
+from app.mcp.client import MCPClient, StdioTransport
+from app.mcp.registry import MCPServerConfig, MCPRegistry
 from app.plugins import (
     GuardrailPlugin,
     MCPPlugin,
@@ -28,66 +27,35 @@ from app.security.tool_guardrail import ToolGuardrail
 from app.tools.registry import ToolRegistry
 
 WORKSPACE = str(PROJECT_ROOT / "workspace")
+PYTHON_EXE = sys.executable
 
 
-class MockMCPTransport(BaseTransport):
-    def __init__(self) -> None:
-        self.is_closed = False
-
-    async def start(self) -> None:
-        pass
-
-    async def send_request(self, method: str, params: Any = None, timeout: float = 30.0) -> Any:
-        if method == "initialize":
-            return {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "test-server", "version": "1.0.0"},
-                "capabilities": {"tools": {}},
-            }
-        elif method == "tools/list":
-            return {
-                "tools": [
-                    {
-                        "name": "plugin_mcp_echo",
-                        "description": "Echo back args",
-                        "inputSchema": {"type": "object", "properties": {"msg": {"type": "string"}}},
-                    }
-                ]
-            }
-        elif method == "tools/call":
-            return {
-                "content": [{"type": "text", "text": f"Echo: {params.get('arguments', {}).get('msg')}"}],
-                "isError": False,
-            }
-        return {}
-
-    async def send_notification(self, method: str, params: Any = None) -> None:
-        pass
-
-    async def close(self) -> None:
-        self.is_closed = True
-
-
-class TestPluginMatrix:
-    def test_full_plugin_lifecycle_and_agent_assembly(self):
+class TestRealPluginMatrix:
+    def test_full_real_plugin_lifecycle_and_agent_assembly(self):
+        """测试使用真实组件（真实 Stdio MCP 子进程、原生工具集、Guardrail、ReAct 编排器）完成全流程组装与可逆卸载。"""
         async def _run():
             ctx = AgentContext()
             mgr = PluginManager(ctx)
 
-            # 1. 构造 Mock MCP Registry
-            mock_mcp_reg = MCPRegistry()
-            mock_transport = MockMCPTransport()
-            mock_client = MCPClient(transport=mock_transport)
-            mock_mcp_reg.register_client("mock_srv", mock_client)
-            await mock_mcp_reg.connect_server("mock_srv")
+            # 1. 构造真实 MCP Registry (连接真实的 Python stdio MCP Server)
+            real_mcp_reg = MCPRegistry()
+            cfg = MCPServerConfig(
+                name="stdio_runtime_srv",
+                transport="stdio",
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
+            real_mcp_reg.register_server(cfg)
+            await real_mcp_reg.connect_server("stdio_runtime_srv")
 
             # 2. 乱序注册所有 Phase 2 核心插件
             mgr.register(
                 ReActOrchestratorPlugin(
-                    config={"workspace_root": WORKSPACE, "max_tool_calls": 10}
+                    config={"workspace_root": WORKSPACE, "max_tool_calls": 15}
                 )
             )
-            mgr.register(MCPPlugin(config={"registry": mock_mcp_reg}))
+            mgr.register(MCPPlugin(config={"registry": real_mcp_reg}))
             mgr.register(
                 ModelAdapterPlugin(
                     config={"client": LLMClient(settings=Settings(ci_mode=True))}
@@ -99,7 +67,7 @@ class TestPluginMatrix:
             # 3. 激活所有插件（按依赖拓扑序自动激活）
             await mgr.activate_all()
 
-            # 验证服务注入完整性
+            # 验证依赖注入完整性
             llm = ctx.inject("llm_client")
             assert llm is not None
 
@@ -107,7 +75,8 @@ class TestPluginMatrix:
             assert tool_reg.get("read_file") is not None
             assert tool_reg.get("write_file") is not None
             assert tool_reg.get("code_edit") is not None
-            assert tool_reg.get("plugin_mcp_echo") is not None  # MCP 工具已成功挂载
+            assert tool_reg.get("calculate") is not None  # 真实 MCP calculate 工具成功挂载
+            assert tool_reg.get("echo") is not None       # 真实 MCP echo 工具成功挂载
 
             guardrail = ctx.inject_typed("guardrail", ToolGuardrail)
             assert guardrail is not None
@@ -115,9 +84,9 @@ class TestPluginMatrix:
             agent = ctx.inject_typed("agent", ReActAgent)
             assert isinstance(agent, ReActAgent)
             assert agent._workspace_root == WORKSPACE
-            assert agent._max_tool_calls == 10
+            assert agent._max_tool_calls == 15
 
-            # 4. 验证事件溯源日志
+            # 验证事件溯源日志
             events = ctx.events.get_events()
             event_types = [e.type for e in events]
             assert "model:ready" in event_types
@@ -125,47 +94,55 @@ class TestPluginMatrix:
             assert "mcp:ready" in event_types
             assert "orchestrator:ready" in event_types
 
-            # 5. 可逆卸载验证 (deactivate_all)
+            # 4. 可逆安全卸载
             await mgr.deactivate_all()
 
-            # 验证所有服务已干净移除
+            # 验证所有服务已被全部注销
             for srv_name in ["llm_client", "tool_registry", "mcp_registry", "guardrail", "agent"]:
                 with pytest.raises(KeyError):
                     ctx.inject(srv_name)
 
-            assert mock_transport.is_closed is True
-
         asyncio.run(_run())
 
-    def test_mcp_plugin_session_end_event_cleanup(self):
+    def test_real_mcp_plugin_session_end_cleanup(self):
+        """测试 session:end 事件触发真实子进程安全清理与断开。"""
         async def _run():
             ctx = AgentContext()
             mgr = PluginManager(ctx)
 
-            mock_mcp_reg = MCPRegistry()
-            mock_transport = MockMCPTransport()
-            mock_client = MCPClient(transport=mock_transport)
-            mock_mcp_reg.register_client("srv_session", mock_client)
-            await mock_mcp_reg.connect_server("srv_session")
+            real_mcp_reg = MCPRegistry()
+            cfg = MCPServerConfig(
+                name="stdio_cleanup_srv",
+                transport="stdio",
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
+            real_mcp_reg.register_server(cfg)
+            await real_mcp_reg.connect_server("stdio_cleanup_srv")
 
             mgr.register(NativeToolsPlugin())
-            mgr.register(MCPPlugin(config={"registry": mock_mcp_reg}))
+            mgr.register(MCPPlugin(config={"registry": real_mcp_reg}))
             await mgr.activate_all()
 
+            client = real_mcp_reg.get_client("stdio_cleanup_srv")
+            assert client is not None and client.is_connected is True
+
             # 触发 session:end 事件
-            await ctx.events.emit("session:end", {"session_id": "sess_001"})
-            assert mock_transport.is_closed is True
+            await ctx.events.emit("session:end", {"session_id": "sess_real_001"})
+            assert client.is_connected is False
 
             await mgr.deactivate_all()
 
         asyncio.run(_run())
 
     def test_model_adapter_plugin_config_instantiation(self):
+        """测试 ModelAdapterPlugin 根据实际配置参数构建客户端。"""
         async def _run():
             ctx = AgentContext()
             plugin = ModelAdapterPlugin(
                 config={
-                    "api_key": "test-key-123",
+                    "api_key": "sk-real-config-key",
                     "base_url": "https://api.deepseek.com/v1",
                     "model": "deepseek-coder",
                     "ci_mode": True,

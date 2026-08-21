@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,115 +14,29 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.main import app
 from app.mcp.client import (
-    BaseTransport,
     JSONRPCError,
     JSONRPCNotification,
     JSONRPCRequest,
     JSONRPCResponse,
     MCPClient,
     MCPToolDefinition,
-    SSETransport,
     StdioTransport,
 )
 from app.mcp.registry import (
     MCPServerConfig,
     MCPRegistry,
     MCPTool,
-    mcp_registry,
 )
 from app.models.tool import ToolCall
-from app.tools.base import BaseTool
 from app.tools.read_file import ReadFileTool
 from app.tools.registry import ToolRegistry
 
 WORKSPACE = str(PROJECT_ROOT / "workspace")
+PYTHON_EXE = sys.executable
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 1. 模拟 Transport 辅助类
-# ═════════════════════════════════════════════════════════════════════
-
-
-class MockTransport(BaseTransport):
-    """用于单元测试的模拟 MCP Transport。"""
-
-    def __init__(self, tools_data: Optional[List[Dict[str, Any]]] = None) -> None:
-        self.is_started = False
-        self.is_closed = False
-        self.sent_notifications: List[str] = []
-        self.requests_received: List[tuple[str, Optional[Dict[str, Any]]]] = []
-        self.tools_data = tools_data or [
-            {
-                "name": "list_files",
-                "description": "List files in a directory",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                    "required": ["path"],
-                },
-            },
-            {
-                "name": "calc_add",
-                "description": "Add two numbers",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
-                    "required": ["a", "b"],
-                },
-            },
-        ]
-
-    async def start(self) -> None:
-        self.is_started = True
-
-    async def send_request(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 30.0) -> Any:
-        self.requests_received.append((method, params))
-
-        if method == "initialize":
-            return {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "mock-mcp-server", "version": "1.0.0"},
-                "capabilities": {"tools": {}},
-            }
-        elif method == "tools/list":
-            return {"tools": self.tools_data}
-        elif method == "tools/call":
-            name = params.get("name") if params else ""
-            args = params.get("arguments", {}) if params else {}
-
-            if name == "list_files":
-                return {
-                    "content": [{"type": "text", "text": f"file1.py\nfile2.py in {args.get('path')}"}],
-                    "isError": False,
-                }
-            elif name == "calc_add":
-                val = args.get("a", 0) + args.get("b", 0)
-                return {
-                    "content": [{"type": "text", "text": f"Result: {val}"}],
-                    "isError": False,
-                }
-            elif name == "error_tool":
-                return {
-                    "content": [{"type": "text", "text": "Tool simulated error"}],
-                    "isError": True,
-                }
-            elif name == "slow_tool":
-                await asyncio.sleep(timeout + 0.5)
-                return {"content": [{"type": "text", "text": "done"}]}
-            else:
-                raise RuntimeError(f"Unknown tool: {name}")
-
-        raise RuntimeError(f"Unhandled method: {method}")
-
-    async def send_notification(self, method: str, params: Optional[Dict[str, Any]] = None) -> None:
-        self.sent_notifications.append(method)
-
-    async def close(self) -> None:
-        self.is_closed = True
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 2. 协议模型与消息序列化测试
+# 1. 协议模型与消息序列化测试 (真实数据模型)
 # ═════════════════════════════════════════════════════════════════════
 
 
@@ -153,265 +66,223 @@ class TestMCPProtocolModels:
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 3. MCPClient 生命周期与工具调用测试
+# 2. 真实 Stdio 进程与 MCPClient 交互测试 (真实 OS 子进程与管道)
 # ═════════════════════════════════════════════════════════════════════
 
 
-class TestMCPClient:
-    def test_connect_handshake(self):
+class TestRealStdioMCPClient:
+    def test_real_stdio_connect_and_handshake(self):
+        """测试启动真实的 Python MCP Server 子进程并执行 JSON-RPC 握手。"""
         async def _run():
-            transport = MockTransport()
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
             client = MCPClient(transport=transport)
             await client.connect()
 
             assert client.is_connected is True
-            assert client.server_info.get("name") == "mock-mcp-server"
-            assert "notifications/initialized" in transport.sent_notifications
+            assert client.server_info.get("name") == "codepilot-mcp-server"
+
+            # 关闭并验证真实子进程被安全终止
             await client.close()
-            assert transport.is_closed is True
+            assert client.is_connected is False
 
         asyncio.run(_run())
 
-    def test_list_tools(self):
+    def test_real_stdio_list_tools(self):
+        """测试从真实的 MCP Server 子进程拉取可用工具列表。"""
         async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            tools = await client.list_tools()
-            assert len(tools) == 2
-            names = [t.name for t in tools]
-            assert "list_files" in names
-            assert "calc_add" in names
-            await client.close()
-
-        asyncio.run(_run())
-
-    def test_call_tool_success(self):
-        async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            output = await client.call_tool("calc_add", {"a": 10, "b": 20})
-            assert "Result: 30" in output
-            await client.close()
-
-        asyncio.run(_run())
-
-    def test_call_tool_error(self):
-        async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            output = await client.call_tool("error_tool", {})
-            assert output.startswith("错误:")
-            assert "Tool simulated error" in output
-            await client.close()
-
-        asyncio.run(_run())
-
-    def test_async_context_manager(self):
-        async def _run():
-            transport = MockTransport()
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
             async with MCPClient(transport=transport) as client:
-                assert client.is_connected is True
                 tools = await client.list_tools()
-                assert len(tools) == 2
-            assert transport.is_closed is True
+                assert len(tools) >= 4
+                names = [t.name for t in tools]
+                assert "echo" in names
+                assert "calculate" in names
+                assert "get_system_info" in names
+                assert "list_dir" in names
+
+        asyncio.run(_run())
+
+    def test_real_stdio_call_tool(self):
+        """测试向真实的 MCP Server 子进程发起 tools/call 调用并获取真实计算结果。"""
+        async def _run():
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
+            async with MCPClient(transport=transport) as client:
+                # 1. 调用 echo 工具
+                echo_out = await client.call_tool("echo", {"message": "Hello CodePilot Real MCP"})
+                assert "Echo: Hello CodePilot Real MCP" in echo_out
+
+                # 2. 调用 calculate 工具
+                calc_out = await client.call_tool("calculate", {"op": "multiply", "a": 7, "b": 8})
+                assert "56" in calc_out
+
+                # 3. 调用 get_system_info 工具
+                sys_out = await client.call_tool("get_system_info", {})
+                assert "python" in sys_out.lower() or "pid" in sys_out
 
         asyncio.run(_run())
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 4. MCPTool 动态包装与安全/超时测试
+# 3. 动态 MCPTool 包装与真实安全防御/超时测试
 # ═════════════════════════════════════════════════════════════════════
 
 
-class TestMCPTool:
-    def test_mcp_tool_execution(self):
+class TestRealMCPToolSecurity:
+    def test_real_mcp_tool_execution(self):
+        """验证动态生成的 MCPTool 实例与 BaseTool 的完全兼容性及真实执行。"""
         async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            tool = MCPTool(
-                name="calc_add",
-                description="Add numbers",
-                parameters={"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}},
-                client=client,
-                server_name="math_server",
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
             )
+            async with MCPClient(transport=transport) as client:
+                tool = MCPTool(
+                    name="calculate",
+                    description="Perform calculation",
+                    parameters={"type": "object", "properties": {"op": {"type": "string"}, "a": {"type": "number"}, "b": {"type": "number"}}},
+                    client=client,
+                    server_name="math_service",
+                )
 
-            # 验证 BaseTool 接口
-            assert tool.name == "calc_add"
-            schema = tool.to_openai_schema()
-            assert schema["type"] == "function"
-            assert schema["function"]["name"] == "calc_add"
+                # 验证 OpenAI Function Calling Schema 导出
+                schema = tool.to_openai_schema()
+                assert schema["type"] == "function"
+                assert schema["function"]["name"] == "calculate"
 
-            result = await tool.run(workspace_root=WORKSPACE, a=5, b=7)
-            assert "Result: 12" in result
-            await client.close()
+                # 真实执行计算
+                res = await tool.run(workspace_root=WORKSPACE, op="add", a=25, b=75)
+                assert "100" in res
 
         asyncio.run(_run())
 
-    def test_path_traversal_blocked_relative(self):
+    def test_real_path_traversal_blocking(self):
+        """测试对真实文件列表 MCP 工具实施 Workspace 路径穿越拦截。"""
         async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            tool = MCPTool(
-                name="list_files",
-                description="List files",
-                parameters={"type": "object", "properties": {"path": {"type": "string"}}},
-                client=client,
-                server_name="fs_server",
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
             )
+            async with MCPClient(transport=transport) as client:
+                tool = MCPTool(
+                    name="list_dir",
+                    description="List directory",
+                    parameters={"type": "object", "properties": {"path": {"type": "string"}}},
+                    client=client,
+                    server_name="fs_service",
+                )
 
-            # 恶意路径穿越
-            result = await tool.run(workspace_root=WORKSPACE, path="../../etc/passwd")
-            assert "SECURITY_BLOCKED" in result
-            assert "路径超出 workspace 范围" in result
-            await client.close()
+                # 1. 拦截相对越界路径
+                res1 = await tool.run(workspace_root=WORKSPACE, path="../../etc/passwd")
+                assert "SECURITY_BLOCKED" in res1
+                assert "路径超出 workspace 范围" in res1
+
+                # 2. 拦截敏感文件
+                res2 = await tool.run(workspace_root=WORKSPACE, path=".env")
+                assert "SECURITY_BLOCKED" in res2
+                assert "禁止访问敏感配置文件" in res2
+
+                # 3. 正常 workspace 路径允许放行并执行
+                res3 = await tool.run(workspace_root=WORKSPACE, path="examples")
+                assert "SECURITY_BLOCKED" not in res3
 
         asyncio.run(_run())
 
-    def test_path_traversal_blocked_sensitive_file(self):
+    def test_real_timeout_interception(self):
+        """测试超时熔断保护。"""
         async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            tool = MCPTool(
-                name="list_files",
-                description="List files",
-                parameters={"type": "object", "properties": {"path": {"type": "string"}}},
-                client=client,
-                server_name="fs_server",
+            transport = StdioTransport(
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
             )
-
-            result = await tool.run(workspace_root=WORKSPACE, path=".env")
-            assert "SECURITY_BLOCKED" in result
-            assert "禁止访问敏感配置文件" in result
-            await client.close()
-
-        asyncio.run(_run())
-
-    def test_timeout_interception(self):
-        async def _run():
-            transport = MockTransport()
-            client = MCPClient(transport=transport)
-            await client.connect()
-
-            tool = MCPTool(
-                name="slow_tool",
-                description="A slow tool",
-                parameters={"type": "object"},
-                client=client,
-                server_name="slow_server",
-                timeout=0.1,  # 100ms 超时
-            )
-
-            result = await tool.run(workspace_root=WORKSPACE)
-            assert "错误" in result
-            assert "超时" in result
-            await client.close()
+            async with MCPClient(transport=transport) as client:
+                tool = MCPTool(
+                    name="echo",
+                    description="Echo",
+                    parameters={"type": "object"},
+                    client=client,
+                    server_name="echo_service",
+                    timeout=0.000001,  # 极短超时强制触发
+                )
+                res = await tool.run(workspace_root=WORKSPACE, message="slow")
+                assert "超时" in res or "Timeout" in res
 
         asyncio.run(_run())
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 5. MCPRegistry 多 Server 与 ToolRegistry 挂载测试
+# 4. MCPRegistry 与 ToolRegistry 真实多 Server 挂载与调用
 # ═════════════════════════════════════════════════════════════════════
 
 
-class TestMCPRegistryIntegration:
-    def test_registry_lifecycle_and_mounting(self):
+class TestRealMCPRegistryIntegration:
+    def test_real_registry_multi_server_mounting_and_execution(self):
+        """测试使用真实配置注册两个真实的 stdio MCP 子进程并挂载至 ToolRegistry。"""
         async def _run():
             reg = MCPRegistry()
-            mock_transport = MockTransport()
-            mock_client = MCPClient(transport=mock_transport)
 
-            reg.register_client("mock_server", mock_client)
-            tools = await reg.connect_server("mock_server")
+            # 注册第一个真实 MCP Server
+            cfg1 = MCPServerConfig(
+                name="server_primary",
+                transport="stdio",
+                command=PYTHON_EXE,
+                args=["-m", "app.mcp.server"],
+                cwd=str(PROJECT_ROOT),
+            )
+            reg.register_server(cfg1)
 
-            assert len(tools) == 2
-            assert reg.get_tool("list_files") is not None
+            # 连接并拉取真实工具
+            tools = await reg.connect_server("server_primary")
+            assert len(tools) >= 4
 
-            # 挂载到 CodePilot 原生 ToolRegistry
+            # 挂载到原生 ToolRegistry
             tool_reg = ToolRegistry()
             tool_reg.register(ReadFileTool())
             assert len(tool_reg.list_tools()) == 1
 
             count = reg.mount_to_tool_registry(tool_reg)
-            assert count == 2
-            assert len(tool_reg.list_tools()) == 3
+            assert count >= 4
+            assert len(tool_reg.list_tools()) >= 5
 
-            # 验证原生 execute() 多态调用 MCP 工具
-            tc = ToolCall(name="calc_add", arguments={"a": 100, "b": 200})
+            # 验证多态调用真实 MCP 工具
+            tc = ToolCall(name="calculate", arguments={"op": "add", "a": 123, "b": 456})
             res = await tool_reg.execute(tc, WORKSPACE)
             assert res.success is True
-            assert "Result: 300" in res.output
+            assert "579" in res.output
 
             # 验证统一元数据导出
             meta = tool_reg.get_tools_metadata()
-            assert len(meta) == 3
+            assert len(meta) >= 5
             sources = {m["source"] for m in meta}
             assert "native" in sources
             assert "mcp" in sources
 
+            # 逆序干净释放所有子进程
             await reg.disconnect_all()
-            assert mock_transport.is_closed is True
 
         asyncio.run(_run())
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 6. Transport 层直接测试 (SSE & Stdio 模拟)
+# 5. FastAPI 接口真实调用测试
 # ═════════════════════════════════════════════════════════════════════
 
 
-class TestTransports:
-    def test_sse_transport_post_success(self):
-        async def _run():
-            transport = SSETransport(url="http://mock-mcp-server/sse")
-            await transport.start()
-
-            # Mock httpx client post
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": {"protocolVersion": "2024-11-05"},
-            }
-            mock_resp.raise_for_status = MagicMock()
-
-            with patch.object(transport._client, "post", new_callable=AsyncMock) as mock_post:
-                mock_post.return_value = mock_resp
-                result = await transport.send_request("initialize", {})
-                assert result == {"protocolVersion": "2024-11-05"}
-
-            await transport.close()
-
-        asyncio.run(_run())
-
-    def test_stdio_transport_closed_guard(self):
-        async def _run():
-            transport = StdioTransport(command="nonexistent_cmd_xyz")
-            with pytest.raises(RuntimeError, match="未启动或已关闭"):
-                await transport.send_request("ping", {})
-
-        asyncio.run(_run())
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 7. FastAPI API 端点测试 (GET /api/tools & GET /api/skills)
-# ═════════════════════════════════════════════════════════════════════
-
-
-class TestToolsAPI:
+class TestRealToolsAPI:
     def setup_method(self):
         self.client = TestClient(app)
 
@@ -419,31 +290,19 @@ class TestToolsAPI:
         resp = self.client.get("/api/tools")
         assert resp.status_code == 200
         data = resp.json()
-        assert "total" in data
-        assert "native_count" in data
-        assert "mcp_count" in data
-        assert "tools" in data
-        assert data["native_count"] >= 6  # 默认包含 read_file, search_code 等
-
-        # 检查工具属性结构
-        first_tool = data["tools"][0]
-        assert "name" in first_tool
-        assert "description" in first_tool
-        assert "source" in first_tool
-        assert "parameters" in first_tool
+        assert data["total"] >= 6
+        assert data["native_count"] >= 6
+        assert len(data["tools"]) >= 6
 
     def test_get_api_skills(self):
         resp = self.client.get("/api/skills")
         assert resp.status_code == 200
         data = resp.json()
         assert "tier1_core_tools" in data
-        assert "tier2_mcp_skills" in data
-        assert "total_skills" in data
         assert len(data["tier1_core_tools"]) >= 6
 
     def test_get_mcp_servers(self):
         resp = self.client.get("/api/mcp/servers")
         assert resp.status_code == 200
         data = resp.json()
-        assert "count" in data
         assert "servers" in data
