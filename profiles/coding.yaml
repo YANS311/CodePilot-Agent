@@ -1,0 +1,19 @@
+profile:
+  name: "codepilot-coding"
+  version: "2.0.0"
+  description: "面向日常交互开发的完整插件装配 Profile"
+
+plugins:
+  - name: "model_adapter"
+    config:
+      model: "deepseek-reasoner"
+  - name: "native_tools"
+  - name: "guardrails"
+    config:
+      max_file_reads: 50
+  - name: "mcp"
+  - name: "react_orchestrator"
+    config:
+      workspace_root: "./workspace"
+      max_tool_calls: 20
+      enable_verification: true

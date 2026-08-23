@@ -16,6 +16,7 @@ from app.memory.vector_store import VectorMemoryStore, VectorEntry
 from app.memory.memory_manager import HybridMemoryManager, get_memory_manager
 
 HAS_MODEL = EmbeddingModel().is_available()
+pytestmark = pytest.mark.skipif(not HAS_MODEL, reason="external dependency unavailable: sentence-transformers model")
 
 
 # ═══════════════════════════════════════════
@@ -23,6 +24,7 @@ HAS_MODEL = EmbeddingModel().is_available()
 # ═══════════════════════════════════════════
 
 
+@pytest.mark.skipif(not HAS_MODEL, reason="external dependency unavailable: sentence-transformers model")
 class TestEmbeddingModel:
     def test_encode_one(self):
         model = EmbeddingModel()

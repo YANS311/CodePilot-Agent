@@ -353,24 +353,29 @@ class TestMaxRetries:
 class TestVerificationDisabled:
     def test_disabled_no_verification_fields(self):
         """With verification disabled, result has default verification fields."""
-        llm = _mock_llm([
-            ChatResponse(tool_calls=[
-                ToolCallInfo(id="tc1", name="write_file", arguments={
-                    "path": "examples/buggy_calculator.py",
-                    "content": "# code\n",
-                }),
-            ]),
-            ChatResponse(content="Done."),
-        ])
+        temp_path = Path(WORKSPACE) / "_test_temp_verify_disabled.py"
+        try:
+            llm = _mock_llm([
+                ChatResponse(tool_calls=[
+                    ToolCallInfo(id="tc1", name="write_file", arguments={
+                        "path": "_test_temp_verify_disabled.py",
+                        "content": "# test temp code\n",
+                    }),
+                ]),
+                ChatResponse(content="Done."),
+            ])
 
-        policy = VerificationPolicy.disabled()
-        agent = ReActAgent(llm, _make_registry(), WORKSPACE, verification_policy=policy)
-        result = asyncio.run(agent.run("fix the bug"))
+            policy = VerificationPolicy.disabled()
+            agent = ReActAgent(llm, _make_registry(), WORKSPACE, verification_policy=policy)
+            result = asyncio.run(agent.run("fix the bug"))
 
-        assert result.verification_passed is False
-        assert result.verification_retries == 0
-        assert result.test_result == ""
-        assert result.wrote_file is True  # still tracked
+            assert result.verification_passed is False
+            assert result.verification_retries == 0
+            assert result.test_result == ""
+            assert result.wrote_file is True  # still tracked
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 # ═══════════════════════════════════════════

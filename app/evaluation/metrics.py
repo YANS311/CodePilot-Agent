@@ -37,9 +37,11 @@ class EvalMetrics:
     success_by_category: dict[str, dict] = field(default_factory=dict)
     # 按 layer 分组
     success_by_layer: dict[str, dict] = field(default_factory=dict)
-    # Agent-specific metrics (v0.4.5)
+    # Agent-specific metrics (v0.4.5 & v2.0)
     verification_pass_rate: float = 0.0  # tasks with verification that passed
-    edit_precision_rate: float = 0.0  # code_edit calls / total edit calls
+    edit_precision_rate: float = 0.0  # code_edit usage among all edit tool calls
+    tool_error_rate: float = 0.0  # failed tool calls / total tool calls
+    avg_steps: float = 0.0  # average steps per task
 
     def to_dict(self) -> dict:
         return {
@@ -157,6 +159,13 @@ def compute_metrics(
     total_edit_calls = code_edit_calls + write_file_calls
     edit_precision_rate = code_edit_calls / total_edit_calls if total_edit_calls else 0.0
 
+    # Harness metrics (v2.0)
+    total_steps_count = sum(len(r.steps) for r in results)
+    avg_steps = total_steps_count / total if total else 0.0
+
+    failed_tools_count = sum(1 for r in results for s in r.steps if not s.success)
+    tool_error_rate = failed_tools_count / total_steps_count if total_steps_count else 0.0
+
     return EvalMetrics(
         total_tasks=total,
         successful_tasks=successful,
@@ -176,4 +185,6 @@ def compute_metrics(
         success_by_layer=by_layer,
         verification_pass_rate=verification_pass_rate,
         edit_precision_rate=edit_precision_rate,
+        tool_error_rate=tool_error_rate,
+        avg_steps=avg_steps,
     )

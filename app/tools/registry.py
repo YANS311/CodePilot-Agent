@@ -94,15 +94,54 @@ class ToolRegistry:
         """导出所有工具的 OpenAI function calling schema。"""
         return [t.to_openai_schema() for t in self._tools.values()]
 
+    def get_tools_metadata(self) -> list[dict[str, Any]]:
+        """导出所有已注册工具的统一元数据（包含 native 与 mcp 工具信息）。"""
+        results: list[dict[str, Any]] = []
+        for t in self._tools.values():
+            if hasattr(t, "to_metadata") and callable(getattr(t, "to_metadata")):
+                results.append(t.to_metadata())
+            else:
+                results.append({
+                    "name": t.name,
+                    "description": t.description,
+                    "source": "native",
+                    "server": "builtin",
+                    "original_name": t.name,
+                    "parameters": t.parameters,
+                    "enabled": True,
+                })
+        return results
+
+    def mount_mcp_registry(self, mcp_registry: Any) -> int:
+        """从 MCPRegistry 批量挂载工具。"""
+        if hasattr(mcp_registry, "mount_to_tool_registry"):
+            return mcp_registry.mount_to_tool_registry(self)
+        return 0
+
     async def execute(
         self, tool_call: ToolCall, workspace_root: str,
         guardrail=None,
+        permission_policy=None,
     ) -> ToolResult:
         """按名称执行工具，返回结构化 ToolResult。
 
-        工具不存在或执行异常时返回 success=False 的 ToolResult。
+        工具不存在、权限被拒或执行异常时返回 success=False 的 ToolResult。
         """
-        # Security Guardrail 检查
+        # 1. Permission Policy 运行时权限硬边界检查
+        if permission_policy is not None:
+            allowed, perm_msg = permission_policy.check_tool_permission(
+                tool_call.name, tool_call.arguments
+            )
+            if not allowed:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    name=tool_call.name,
+                    success=False,
+                    output=perm_msg,
+                    metadata={"permission_blocked": True},
+                )
+
+        # 2. Security Guardrail 规则检查
         if guardrail is not None:
             from app.security.tool_guardrail import ToolGuardrail
             if isinstance(guardrail, ToolGuardrail):
