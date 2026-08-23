@@ -1,247 +1,242 @@
 # CodePilot Agent
 
 [![CI](https://github.com/YANS311/CodePilot-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/YANS311/CodePilot-Agent/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Lightweight AI Coding Agent Prototype**
+> **A lightweight and extensible Coding Agent Harness built with Python, featuring ReAct orchestration, unified tool runtime, MCP integration, Agent Skills, sandboxed execution and reproducible evaluation.**
 
-CI runs the pytest suite on push and pull request. Tests that require external LLM APIs, local embedding models, or local-only documents are conditionally skipped when unavailable in CI. CI behavior and conditional skips are documented in [docs/ci_notes.md](docs/ci_notes.md).
+---
 
-**CI Design Principle:**
-- CI prioritizes determinism over completeness
-- External dependencies (LLM API, embedding model) are mocked in CI mode
-- Integration tests are isolated from external services
-- Full system evaluation runs locally with real models
+## 1. System Architecture
 
-## System Overview
+CodePilot Agent decouples the orchestration harness from external capabilities and environment execution. Built-in tools and Model Context Protocol (MCP) servers share a polymorphic execution contract, while procedural domain workflows are dynamically injected via progressive Agent Skills.
 
-CodePilot is an interview-ready engineering prototype that demonstrates a ReAct-based coding agent with tool-calling, evidence-grounded analysis, and controlled evaluation benchmarks.
+```mermaid
+graph TD
+    User([User / FastAPI REST API]) --> AgentHarness[Agent Harness Orchestration]
 
-| Layer | What it does |
-|-------|-------------|
-| **Agent** | ReAct loop (Think -> Act -> Observe) with hybrid intent routing |
-| **Tool** | 7 tools: search, read, write, code_edit, run_tests, git_diff, git_status |
-| **Memory** | Lightweight hybrid memory: structured (keyword) + vector (FAISS) |
-| **Routing** | 3-layer intent router: rule -> embedding -> LLM fallback |
-| **Concurrency** | Workspace-level lock with FIFO queue |
-| **Evaluation** | 30 synthetic + 15 real-world + 10 stress test tasks |
-| **Explainability** | AST evidence extraction with confidence scoring |
+    subgraph AgentHarness[Agent Harness Core]
+        Router[Intent Router<br/>Rule / Embedding / LLM]
+        ReAct[ReAct Loop<br/>Think -> Act -> Observe]
+        SkillsMgr[Agent Skills Manager<br/>Progressive Disclosure Level 1-3]
+        Trace[Execution Trace & Observability]
+        PermPolicy[Permission Policy<br/>READ / WRITE / EXECUTE Boundary]
+        Registry[Unified Tool Registry]
+    end
 
-## Architecture
+    Router --> ReAct
+    SkillsMgr -.->|On-Demand Injection| ReAct
+    ReAct --> Trace
+    ReAct --> PermPolicy
+    PermPolicy --> Registry
 
-```
-                        User
-                         |
-                  +------v------+
-                  |  FastAPI    |
-                  +------+------+
-                         |
-              +----------v----------+
-              |  Agent Orchestrator |
-              |  Intent Router      |
-              |  ReAct / Repo Mode  |
-              +----------+----------+
-                         |
-            +------------+------------+
-            v            v            v
-      +----------+ +----------+ +----------+
-      |  Tools   | | Execution| |Workspace |
-      | 7 tools  | | Local/   | |Index +   |
-      | + guard  | | Docker   | |Lock      |
-      +----------+ +----------+ +----------+
-                         |
-         +---------------+---------------+
-         v               v               v
-   +----------+   +----------+   +----------+
-   |Evaluation|   | Security |   |Evidence  |
-   |30+15+10  |   |Guardrails|   |AST +     |
-   |tasks     |   |3-layer   |   |Confidence|
-   +----------+   +----------+   +----------+
-         |
-   +-----v-----+
-   |  Memory   |
-   |Structured |
-   |+ Vector   |
-   +-----------+
+    subgraph ToolRuntime[Unified Tool Runtime]
+        Registry --> BuiltInTools["Built-in Tools<br/>(search_code, read_file, write_file,<br/>code_edit, run_tests, git_diff, git_status)"]
+        Registry --> MCPAdapter["MCP Client & Adapter<br/>(JSON-RPC 2.0 via stdio)"]
+    end
+
+    subgraph ExecutionLayer[Sandboxed Execution Boundary]
+        BuiltInTools --> LocalRunner[Local Sandboxed Runner]
+        BuiltInTools --> DockerRunner[Docker Container Runner]
+        MCPAdapter --> ExternalMCPServers["External MCP Servers<br/>(@modelcontextprotocol/*, Community MCPs)"]
+    end
+
+    subgraph EvalFramework[Reproducible Evaluation Benchmark]
+        EvalRunner[Evaluation Runner] --> Metrics["Metrics Engine<br/>(Pass@1, TSR, Tool Efficiency, Latency, Tool Error Rate)"]
+        Replay[Replay Engine] --> EvalRunner
+    end
 ```
 
-## Features
+---
 
-### Agent Memory Layer
+## 2. Core Capabilities
 
-Three tiers of memory for context persistence:
+### 2.1 Agent Runtime & ReAct Loop
+- **Iterative Reasoning Loop**: Systematic `Think -> Act -> Observe` cycle with dynamic prompt budget control (`ToolBudget`).
+- **Fake Tool Call & Completion Drift Recovery**: Real-time trajectory heuristic detection preventing hallucinated inline tool outputs or false "done" declarations without modifying code.
+- **Automated Self-Verification**: Post-write execution loop automatically triggers targeted test suites and injects test assertion failures back into context for iterative self-healing.
 
-| Tier | Type | What it stores |
-|------|------|---------------|
-| **Short-term** | In-memory | ReAct execution trace, tool history, current task context |
-| **Structured long-term** | Keyword-indexed | Task history (what was done), error patterns (what failed), repo knowledge |
-| **Vector memory** | FAISS + sentence-transformers | Semantic similarity search across all memory entries |
+### 2.2 Unified Tool System (Built-in + MCP)
+- **Polymorphic Contract**: All tools inherit from `BaseTool`, implementing `to_openai_schema()` and `run(workspace_root, **kwargs)`.
+- **MCP Client Adapter**: Implements the Model Context Protocol (JSON-RPC 2.0 over `stdio`), dynamically discovering tools, converting JSON Schemas to OpenAI function schemas, and mounting seamlessly into `ToolRegistry`.
+- **Namespace & Failure Isolation**: Server crashes, malformed responses, and protocol timeouts are caught and reported as structured errors without crashing the main agent harness.
 
-Memory is injected into the agent prompt as context on each task, enabling the agent to recall prior errors and similar tasks.
+### 2.3 Agent Skills System (Progressive Disclosure)
+- **Procedural Knowledge Separation**: Distinction between *Tools* (what the agent can execute) and *Skills* (how the agent should approach a domain task step-by-step).
+- **Three-Tier Progressive Disclosure**:
+  - **Level 1 (Metadata Discovery)**: System prompt indexes only names and summaries (<100 tokens).
+  - **Level 2 (Instruction Loading)**: Full `SKILL.md` procedural guidelines are loaded on-demand when relevant task intent is matched.
+  - **Level 3 (Resource Loading)**: Associated reference manuals, scripts, and examples are fetched strictly on explicit need.
 
-### Hybrid Intent Router
+### 2.4 Sandboxed Execution & Security Boundaries
+- **Deterministic Permission Policy**: Hard enforcement of `READ`, `WRITE`, `EXECUTE`, `NETWORK`, and `GIT_MUTATE` actions in `ToolRegistry` (Prompt Guardrail != Security Boundary).
+- **Execution Runners**: Pluggable `LocalRunner` (subprocess isolation with workspace confinement) and `DockerRunner` (isolated container sandbox).
+- **Path Traversal Blocking**: Strict `safe_resolve` validation preventing directory escape (`../`) across all native tools and MCP adapters.
 
-3-layer routing to determine agent mode (ReAct / Repo Analysis / Security Block):
+### 2.5 Reproducible Evaluation Framework
+- **Quantitative Benchmark Metrics**: Task Success Rate (TSR), Pass@1, Tool Efficiency, Latency (ms), Tool Error Rate, and Error Taxonomy distribution.
+- **Multi-Layer Task Suite**: 30 synthetic benchmarks + 15 real-world repository tasks + 10 stress/recovery test cases.
+- **Deterministic Replay**: Recorded `ExecutionTrace` trajectories allow exact replay and step-level regression debugging.
 
-| Layer | Method | Latency |
-|-------|--------|---------|
-| **Rule-based** | Keyword + regex patterns | ~0ms |
-| **Embedding** | Cosine similarity to intent centroids (sentence-transformers) | ~50ms |
-| **LLM fallback** | Heuristic question-pattern detection | ~100ms |
+---
 
-Security intent is rule-only (never routed via embedding). Intent prototypes are built from representative Chinese + English phrases.
+## 3. Quick Start
 
-### Workspace Lock
-
-Per-workspace concurrency control:
-
-- Acquire/release lock per agent task
-- FIFO queue for concurrent requests on the same workspace
-- Prevents write conflicts when multiple tasks target the same codebase
-
-### Security
-
-3-layer defense:
-
-1. **Prompt Injection Detection** -- blocks role-play, instruction override, jailbreak patterns
-2. **Tool Guardrail** -- prevents dangerous operations (file deletion, path traversal)
-3. **Completion Chain** -- validates claimed fixes were actually executed via tool calls
-
-### Explainability
-
-Every analysis conclusion backed by code evidence:
-
-```
-Claim: Bug in subtract function
-- File: app/calc.py, Symbol: subtract, Lines: 15-20
-
-Confidence: 85%
-```
-
-## Demo
-
-One unified flow: **Upload -> Index -> Agent -> Tool -> Execute -> Evidence -> Result**
-
-| Step | What happens |
-|------|-------------|
-| 1 | Upload a buggy Python project |
-| 2 | Agent auto-builds WorkspaceIndex (file tree + AST summaries) |
-| 3 | Click **Bug Fix** -- Agent locates, reads, fixes, tests, verifies |
-| 4 | Unified output: Summary + Trace + Tools + Metrics + Evidence + Confidence |
+### 3.1 Setup Environment
 
 ```bash
-# Quick start
+# Clone repository
 git clone https://github.com/YANS311/CodePilot-Agent.git
 cd CodePilot-Agent
-cp .env.example .env    # Add your API key
-docker-compose up       # Open http://localhost:8000
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-## Evaluation
+### 3.2 Configure MCP Servers (`mcp.json`)
 
-Layered evaluation with baseline comparison and benchmark reporting.
+Declare community or custom MCP servers in the root `mcp.json`:
 
-### Benchmark Tasks
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
+      "timeout": 30.0
+    },
+    "memory": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "timeout": 15.0
+    }
+  }
+}
+```
 
-| Layer | Tasks | Scope |
-|-------|------:|-------|
-| Unit (CI-deterministic) | 10 | Single-file bug fixes |
-| Integration | 12 | Multi-file, config, validation |
-| Stress | 8 | Multi-file, retry, recovery |
-| Real-World (3 repos, seeded bugs) | 15 | Cross-file, hidden bugs |
+Load MCP configuration programmatically:
 
-### Baseline Modes
+```python
+from app.mcp.registry import MCPRegistry
+from app.tools.registry import ToolRegistry
 
-| Mode | Description |
-|------|-------------|
-| `bare_llm` | LLM only, no tools, no agent loop (conservative baseline) |
-| `react_no_memory` | ReAct agent with memory disabled |
-| `react_full` | Full agent with memory, verification, surgical editing |
+mcp_registry = MCPRegistry()
+mcp_registry.load_from_json("mcp.json")
+await mcp_registry.start_all()
 
-### Benchmark Report
+tool_registry = ToolRegistry()
+mcp_registry.mount_to_tool_registry(tool_registry)
+print(f"Loaded tools: {[t.name for t in tool_registry.list_tools()]}")
+```
 
-Generate comparison reports from existing JSON (no eval re-run):
+### 3.3 Adding a Custom Agent Skill (`skills/<name>/SKILL.md`)
+
+Create a skill directory with a standard YAML frontmatter contract:
+
+```markdown
+---
+name: bug-fix
+description: Diagnose and fix reproducible software defects following systematic verification.
+version: 1.0.0
+tags: [debugging, bug-fix, verification]
+---
+
+# Procedural Knowledge: Bug Fixing Workflow
+1. Reproduce & Observe: Run tests to observe failure trace.
+2. Root Cause Analysis: Use search_code and read_file.
+3. Minimal Surgical Patch: Modify code with code_edit.
+4. Targeted Verification: Re-run test suite to confirm pass.
+5. Regression Check: Inspect git_diff.
+```
+
+The `SkillManager` automatically indexes Level 1 metadata and loads Level 2 instructions when a bug-fix task is dispatched:
+
+```python
+from app.skills.manager import skill_manager
+
+matched_skill = skill_manager.match_and_load_for_task("Fix failing test in calculator subtract method")
+print(f"Active skill: {matched_skill.name}")
+```
+
+### 3.4 Running the Test Suite
 
 ```bash
-# From single report
-python scripts/generate_benchmark_report.py \
-  --from-json reports/eval_report.json \
-  --output-md docs/benchmark_report.md
+# Run unit & integration tests
+pytest tests/unit tests/integration -q --tb=short
 
-# Multi-baseline comparison
-python scripts/generate_benchmark_report.py \
-  --baseline-files reports/react_full.json reports/bare_llm.json \
-  --output-md docs/benchmark_report.md
+# Verify specific modules
+pytest tests/unit/test_skills.py tests/unit/test_permission.py tests/unit/test_mcp_config.py -v
 ```
 
-Missing fields are shown as `not_available` — never fabricated. CI/mock reports include an explicit disclaimer.
+---
 
-> All metrics are controlled evaluation results, not production claims. See [docs/benchmark_report.md](docs/benchmark_report.md).
+## 4. Repository Structure
 
-### Failed-task Replay Validation
-
-The previous 3 failed evaluation tasks were replayed locally with the `mini_coding_agent` conda environment after tightening test coverage and eval task context:
-
-```bash
-C:\Users\A\anaconda3\envs\mini_coding_agent\python.exe scripts/replay_task.py \
-  fix-retry-request fix-append-line fix-file-processor-all
+```text
+CodePilot-Agent/
+├── app/
+│   ├── agent/                 # Core Agent runtime (ReAct loop, prompts, budget, trace)
+│   │   ├── react_agent.py     # ReAct Agent orchestrator & verification loop
+│   │   ├── trace.py           # Structured execution trace & observability
+│   │   ├── budget.py          # Tool call budget & anti-loop controller
+│   │   └── verification.py    # Self-verification policy & retry engine
+│   ├── core/                  # Core config, LLM client abstraction & kernel
+│   ├── execution/             # Sandboxed execution runners (LocalRunner, DockerRunner)
+│   ├── evaluation/            # Benchmark runner, metrics computation & replay
+│   ├── mcp/                   # Model Context Protocol client & registry
+│   │   ├── client.py          # Stdio JSON-RPC transport & protocol client
+│   │   ├── registry.py        # MCP server manager & MCPTool adapter
+│   │   └── server.py          # Reference builtin stdio MCP server
+│   ├── models/                # ToolCall, ToolResult, AgentStep models
+│   ├── router/                # 3-layer hybrid intent router
+│   ├── security/              # PermissionPolicy & ToolGuardrail
+│   │   ├── permission.py      # Runtime permission action enforcement
+│   │   └── tool_guardrail.py  # Path traversal & prompt security guards
+│   ├── skills/                # Agent Skills system (Progressive Disclosure)
+│   │   ├── models.py          # Skill & SkillMetadata data contracts
+│   │   ├── loader.py          # YAML frontmatter scanner & resource loader
+│   │   ├── selector.py        # Task intent to skill matcher
+│   │   └── manager.py         # Runtime skill lifecycle manager
+│   ├── tools/                 # Built-in developer tools (BaseTool implementations)
+│   └── workspace/             # Workspace indexer, resolver & cache
+├── skills/                    # Built-in standard coding skills
+│   ├── bug-fix/SKILL.md       # Defect diagnosis & verification workflow
+│   ├── code-review/SKILL.md   # Quality & security audit workflow
+│   └── test-debugging/SKILL.md# Flaky & failing test isolation workflow
+├── benchmarks/                # Synthetic & real-world evaluation tasks
+├── mcp.json                   # Standard MCP server declarations
+├── pyproject.toml             # Pytest & project build configuration
+└── tests/
+    ├── unit/                  # Fast deterministic unit tests (500+ tests)
+    └── integration/           # MCP, runner & API integration tests
 ```
 
-| Task | Result | Tool Calls | What changed |
-|------|--------|-----------:|--------------|
-| `fix-retry-request` | PASS | 5 | Added the missing retry backoff test target. |
-| `fix-append-line` | PASS | 6 | Corrected newline expectations and clarified append behavior. |
-| `fix-file-processor-all` | PASS | 6 | Injected target file/test context to reduce wasted search steps. |
+---
 
-The replay traces are stored under `reports/replays/`. This validates that the known `test_infrastructure`, `file_modification`, and `planning` failures now have a reproducible recovery path.
+## 5. Architectural Design Decisions
 
-## Real Usage Case Studies
+### 5.1 Why MCP (Model Context Protocol)?
+Rather than maintaining ad-hoc proprietary integrations for every external developer service (GitHub, databases, memory stores, documentation search), MCP provides an open, standardized JSON-RPC protocol. CodePilot acts as an **MCP Client**, allowing developers to connect any community MCP server via simple JSON configuration without modifying agent core code.
 
-Self-tested execution traces documenting how the agent handles real coding tasks — including failures and recovery.
+### 5.2 Why Skills vs. Tools?
+- **Tools** are *Actions/Capabilities*: They define *what* operations the agent can execute in the physical environment (`read_file`, `write_file`, `run_tests`).
+- **Skills** are *Procedural Knowledge*: They define *how* an experienced engineer structures problem-solving steps (e.g. reproduce -> isolate -> minimal patch -> verify -> diff check).
 
-| Case | Task Type | Tool Calls | Key Finding |
-|------|-----------|-----------|-------------|
-| [Bug Fix (Todo Service)](docs/real_usage_cases.md#case-1-python-bug-fix--todo-service-persistence-bug) | 3-bug fix | 10 | Guardrail caught no-write, forced re-execution |
-| [Repo Analysis](docs/real_usage_cases.md#case-2-repository-architecture-analysis) | Architecture | 0 | WorkspaceIndex sufficient, no file reads needed |
-| [Wrong File Recovery](docs/real_usage_cases.md#case-3-wrong-file-recovery--fibonacci-error-handling) | Error handling | 9 | SmartFileResolver disambiguated similar files |
-| [No-Code-Change Failure](docs/real_usage_cases.md#case-4-agent-no-code-change-failure) | Bug fix (failed) | 7 | Agent analyzed but didn't write; tracked via `wrote_file` |
-| [Security Guardrail](docs/real_usage_cases.md#case-5-security-guardrail--prompt-injection) | Injection attack | 0 | Blocked before LLM call, zero tool usage |
+### 5.3 Why Progressive Disclosure?
+Injecting dozens of complete tool manuals and workflows into the system prompt at startup causes severe context window bloat, increases inference costs, and dilutes model attention. Progressive Disclosure exposes only lightweight Level 1 summaries (<100 tokens) initially, dynamically fetching Level 2 instructions only when relevant, and loading Level 3 reference files strictly on explicit demand.
 
-> See [docs/real_usage_cases.md](docs/real_usage_cases.md) for full execution traces and system lessons.
+### 5.4 Why a Harness instead of a Model Wrapper?
+A production Coding Agent cannot rely solely on raw LLM capabilities. The **Harness** layer provides the essential engineering substrate:
+1. **Deterministic Safety**: Runtime permission enforcement and workspace sandboxing.
+2. **Loop Control & Budgeting**: Detecting duplicate searches, fake tool calls, and loop fatigue.
+3. **Traceability**: Step-by-step latency, decision, and error event tracking.
+4. **Reproducible Evaluation**: Scientific benchmarking across model iterations.
 
-## Engineering Notes for Interview
+---
 
-Detailed engineering docs covering Docker operations, failure modes, and operational knowledge grounded in actual code:
+## 6. License
 
-| Doc | Focus | Key Topics |
-|-----|-------|------------|
-| [Engineering Interview Audit](docs/engineering_interview_audit.md) | Docker, Memory/Cache, LLM failures | compose lifecycle, degradation modes, retry logic |
-| [Git Interview Notes](docs/git_interview_notes.md) | Git workflow Q&As | merge vs rebase, cherry-pick, revert vs reset |
-| [Agent Failure Playbook](docs/agent_failure_playbook.md) | Failure diagnosis steps | no-write detection, wrong file, test failures, timeouts |
-
-## Tech Stack
-
-| Category | Technology |
-|----------|-----------|
-| Language | Python 3.9+ |
-| Backend | FastAPI + Pydantic |
-| LLM | OpenAI / DeepSeek compatible API |
-| Execution | Local subprocess / Docker sandbox |
-| Indexing | Workspace Intelligence (file tree + AST) |
-| Memory | sentence-transformers + FAISS (lightweight hybrid) |
-| Routing | 3-layer intent classifier (rule + embedding + fallback) |
-| Eval | Custom benchmark with 12 advanced metrics |
-| Security | Prompt injection + tool guardrail |
-
-## Run Tests
-
-```bash
-pytest tests/ -v    # 600 passed, 2 skipped (v0.5.0)
-```
-
-## Keywords
-
-> **Python / FastAPI / LLM / Agent / Tool Calling / Evaluation / Security / ReAct / Memory / Intent Routing / Explainability**
-
-## License
-
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

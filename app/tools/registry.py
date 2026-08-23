@@ -121,12 +121,27 @@ class ToolRegistry:
     async def execute(
         self, tool_call: ToolCall, workspace_root: str,
         guardrail=None,
+        permission_policy=None,
     ) -> ToolResult:
         """按名称执行工具，返回结构化 ToolResult。
 
-        工具不存在或执行异常时返回 success=False 的 ToolResult。
+        工具不存在、权限被拒或执行异常时返回 success=False 的 ToolResult。
         """
-        # Security Guardrail 检查
+        # 1. Permission Policy 运行时权限硬边界检查
+        if permission_policy is not None:
+            allowed, perm_msg = permission_policy.check_tool_permission(
+                tool_call.name, tool_call.arguments
+            )
+            if not allowed:
+                return ToolResult(
+                    tool_call_id=tool_call.id,
+                    name=tool_call.name,
+                    success=False,
+                    output=perm_msg,
+                    metadata={"permission_blocked": True},
+                )
+
+        # 2. Security Guardrail 规则检查
         if guardrail is not None:
             from app.security.tool_guardrail import ToolGuardrail
             if isinstance(guardrail, ToolGuardrail):

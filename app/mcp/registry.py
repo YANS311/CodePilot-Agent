@@ -231,6 +231,34 @@ class MCPRegistry:
         else:
             self._configs[name] = MCPServerConfig(name=name, transport="stdio", command="custom")
 
+    def load_from_dict(self, data: Dict[str, Any]) -> List[str]:
+        """从配置字典中批量加载 MCP Server 配置。
+        
+        支持标准格式:
+        {"mcpServers": {"server_name": {"transport": "stdio", "command": "...", "args": []}}}
+        """
+        registered: List[str] = []
+        servers = data.get("mcpServers", data)
+        for srv_name, srv_conf in servers.items():
+            if not isinstance(srv_conf, dict):
+                continue
+            conf_data = dict(srv_conf)
+            conf_data.setdefault("name", srv_name)
+            cfg = MCPServerConfig(**conf_data)
+            self.register_server(cfg)
+            registered.append(srv_name)
+        return registered
+
+    def load_from_json(self, json_path: str | Path) -> List[str]:
+        """从 JSON 配置文件 (如 mcp.json) 批量加载并注册 MCP Server。"""
+        path = Path(json_path)
+        if not path.exists():
+            raise FileNotFoundError(f"MCP 配置文件不存在: {json_path}")
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return self.load_from_dict(data)
+
     def unregister_server(self, name: str) -> None:
         """注销 MCP Server。"""
         self._configs.pop(name, None)

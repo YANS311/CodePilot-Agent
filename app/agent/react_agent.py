@@ -3,16 +3,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
 from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.trace import ExecutionStepTrace, ExecutionTrace
 from app.agent.verification import VerificationPolicy
 from app.memory.memory_manager import get_memory_manager
 from app.router.intent_router import get_intent_router, INTENT_REPO, INTENT_SECURITY
+from app.security.permission import PermissionPolicy
 from app.security.tool_guardrail import ToolGuardrail
+from app.skills.manager import SkillManager, skill_manager
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.registry import ToolRegistry
@@ -114,6 +118,9 @@ class AgentRunResult:
     verification_passed: bool = False
     verification_retries: int = 0
     test_result: str = ""
+    # v2.0: skills & trace
+    active_skill: Optional[str] = None
+    trace: Optional[ExecutionTrace] = None
 
 
 class ReActAgent:
@@ -133,6 +140,8 @@ class ReActAgent:
         workspace_root: str,
         max_tool_calls: int = MAX_TOOL_CALLS,
         verification_policy: VerificationPolicy | None = None,
+        permission_policy: PermissionPolicy | None = None,
+        skill_manager_instance: SkillManager | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -142,6 +151,8 @@ class ReActAgent:
         self._has_completion_corrected = False
         self._budget = ToolBudget(max_calls=max_tool_calls)
         self._guardrail = ToolGuardrail()
+        self._permission_policy = permission_policy or PermissionPolicy.standard_coding()
+        self._skill_manager = skill_manager_instance or skill_manager
         self._index: Optional[WorkspaceIndex] = None
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
@@ -175,21 +186,34 @@ class ReActAgent:
         if intent_result.intent == INTENT_REPO:
             return await self._run_repo_mode(task)
 
-        # 构建 Workspace 索引并注入上下文
+        # Progressive Disclosure: 针对任务意图按需检索并加载匹配的 Skill
+        matched_skill = self._skill_manager.match_and_load_for_task(task)
+        active_skill_name = matched_skill.name if matched_skill else None
+        skill_prompt_section = matched_skill.to_prompt_instruction() if matched_skill else ""
+
+        # 初始化结构化 Execution Trace
+        trace = ExecutionTrace(task=task, active_skill=active_skill_name)
+
+        # 构建 Workspace 索引与记忆上下文并注入
         index_context = self._build_index_context()
         mem_ctx = self._build_memory_context(task)
 
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + index_context + mem_ctx},
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT + "\n\n" + index_context + mem_ctx + skill_prompt_section,
+            },
             {"role": "user", "content": task},
         ]
 
         tools_schema = self._registry.get_schemas()
-        result = await self._run_core(task, messages, tools_schema)
+        result = await self._run_core(task, messages, tools_schema, trace=trace, active_skill=active_skill_name)
 
         # ── Self-Verification Loop ──
         if self._verification.enabled and result.wrote_file:
             result = await self._verify(task, result, messages, tools_schema)
+            if result.trace:
+                result.trace = trace
 
         self._write_task_memory(task, result, result.steps)
         return result
@@ -199,6 +223,8 @@ class ReActAgent:
         task: str,
         messages: list[dict[str, Any]],
         tools_schema: list[dict],
+        trace: Optional[ExecutionTrace] = None,
+        active_skill: Optional[str] = None,
     ) -> AgentRunResult:
         """Core agent loop — Think → Act → Observe.
 
@@ -274,6 +300,8 @@ class ReActAgent:
                     wrote_file=has_write,
                     no_code_change_reason=no_reason,
                     error_events=list(self._error_events),
+                    active_skill=active_skill,
+                    trace=trace,
                 )
 
             thought = response.content or ""
@@ -307,13 +335,49 @@ class ReActAgent:
                     self._budget.remaining_calls,
                 )
 
+                t_start = time.perf_counter()
                 tool_call = ToolCall(
                     id=tc_info.id, name=tc_info.name, arguments=tc_info.arguments
                 )
-                result = await self._registry.execute(
-                    tool_call, self._workspace_root, guardrail=self._guardrail
-                )
+
+                if self._permission_policy is not None:
+                    allowed, perm_msg = self._permission_policy.check_tool_permission(
+                        tc_info.name, tc_info.arguments
+                    )
+                    if not allowed:
+                        result = ToolResult(
+                            tool_call_id=tc_info.id,
+                            name=tc_info.name,
+                            success=False,
+                            output=perm_msg,
+                            metadata={"permission_blocked": True},
+                        )
+                    else:
+                        result = await self._registry.execute(
+                            tool_call, self._workspace_root, guardrail=self._guardrail
+                        )
+                else:
+                    result = await self._registry.execute(
+                        tool_call, self._workspace_root, guardrail=self._guardrail
+                    )
+
+                t_latency = (time.perf_counter() - t_start) * 1000.0
                 tool_results.append(result)
+
+                if trace:
+                    step_status = "success" if result.success else (
+                        "permission_blocked" if result.metadata.get("permission_blocked") else "error"
+                    )
+                    trace.add_step(
+                        step=tool_calls_count,
+                        tool_name=tc_info.name,
+                        arguments=tc_info.arguments,
+                        status=step_status,
+                        latency_ms=t_latency,
+                        decision=thought,
+                        error=result.output if not result.success else None,
+                        output=result.output,
+                    )
 
                 if tc_info.name == "search_code" and result.success:
                     self._extract_and_cache_paths(tc_info.arguments.get("query", ""), result.output)
@@ -346,6 +410,9 @@ class ReActAgent:
             no_reason = "Agent exhausted tool calls without write_file"
             logger.warning("Budget exhausted without write_file for code modification task")
 
+        if trace:
+            trace.status = "budget_exhausted"
+
         return AgentRunResult(
             answer=final_response.content or "[达到最大工具调用次数，未能生成回答]",
             tool_calls_count=tool_calls_count,
@@ -357,6 +424,8 @@ class ReActAgent:
             wrote_file=has_write,
             no_code_change_reason=no_reason,
             error_events=list(self._error_events),
+            active_skill=active_skill,
+            trace=trace,
         )
 
     async def _verify(

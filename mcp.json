@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "local_helper": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["-m", "app.mcp.server"],
+      "timeout": 30.0,
+      "namespace_tools": true
+    }
+  }
+}
