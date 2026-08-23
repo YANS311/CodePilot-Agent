@@ -164,8 +164,11 @@ print(f"Active skill: {matched_skill.name}")
 ### 3.4 Running the Test Suite
 
 ```bash
-# Run unit & integration tests
-pytest tests/unit tests/integration -q --tb=short
+# Run unit tests (385 tests, ~45s)
+pytest tests/unit -q --tb=short
+
+# Run CI-equivalent full test suite (569 passed, 6 skipped, ~67s)
+CODEPILOT_CI_MODE=true pytest tests/unit tests/integration -q --tb=short
 
 # Verify specific modules
 pytest tests/unit/test_skills.py tests/unit/test_permission.py tests/unit/test_mcp_config.py -v
@@ -210,8 +213,8 @@ CodePilot-Agent/
 ├── mcp.json                   # Standard MCP server declarations
 ├── pyproject.toml             # Pytest & project build configuration
 └── tests/
-    ├── unit/                  # Fast deterministic unit tests (500+ tests)
-    └── integration/           # MCP, runner & API integration tests
+    ├── unit/                  # Fast deterministic unit tests (385 tests)
+    └── integration/           # MCP, runner & API integration tests (190 tests)
 ```
 
 ---
