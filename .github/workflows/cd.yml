@@ -1,0 +1,103 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  docker-smoke-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=branch
+
+      - name: Build test Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: codepilot-agent:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run container smoke test
+        run: |
+          echo "Starting CodePilot Agent container..."
+          docker run -d --name agent-smoke-test \
+            -p 8000:8000 \
+            -e CODEPILOT_CI_MODE=true \
+            codepilot-agent:test
+
+          echo "Waiting for container service to be healthy..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health | grep -q '"status":"ok"'; then
+              echo "Smoke test PASSED: /health endpoint responded with status: ok"
+              docker logs agent-smoke-test
+              docker stop agent-smoke-test
+              docker rm agent-smoke-test
+              exit 0
+            fi
+            echo "Waiting for service (attempt $i/30)..."
+            sleep 2
+          done
+
+          echo "Smoke test FAILED: /health did not respond in time"
+          docker logs agent-smoke-test
+          docker stop agent-smoke-test
+          docker rm agent-smoke-test
+          exit 1
+
+      - name: Push Docker image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+  create-release:
+    needs: docker-smoke-and-publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
