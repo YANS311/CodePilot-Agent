@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -129,7 +130,12 @@ class StdioTransport(BaseTransport):
         if self._process is not None:
             return
 
-        cmd_list = [self.command] + self.args
+        resolved_cmd = shutil.which(self.command) or self.command
+        if sys.platform == "win32" and resolved_cmd.lower().endswith((".cmd", ".bat")):
+            comspec = os.environ.get("COMSPEC", "cmd.exe")
+            cmd_list = [comspec, "/c", resolved_cmd] + self.args
+        else:
+            cmd_list = [resolved_cmd] + self.args
         merged_env = os.environ.copy()
         if self.env:
             merged_env.update(self.env)
