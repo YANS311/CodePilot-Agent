@@ -45,11 +45,29 @@ class Skill:
         return self.metadata.description
 
     def to_prompt_instruction(self) -> str:
-        """生成注入到 Agent Prompt 中的 Level 2 程序性工作流指导。"""
-        return (
-            f"\n\n--- [Active Skill: {self.name}] ---\n"
-            f"Description: {self.description}\n\n"
-            f"### Procedural Workflow Guidelines:\n"
-            f"{self.instructions.strip()}\n"
-            f"--- [End Skill: {self.name}] ---\n"
-        )
+        """生成注入到 Agent Prompt 中的 Level 2/3 程序性工作流指导与可用资源。"""
+        sections = [
+            f"\n\n--- [Active Skill: {self.name}] ---",
+            f"Description: {self.description}\n",
+            "### Procedural Workflow Guidelines:",
+            self.instructions.strip(),
+        ]
+
+        # Level 3: Available helper scripts
+        if self.scripts:
+            sections.append("\n### Available Helper Scripts (Executable via bash_runner / python):")
+            skill_dir = Path(self.metadata.path).parent
+            for script_name in sorted(self.scripts.keys()):
+                script_path = (skill_dir / "scripts" / script_name).as_posix()
+                sections.append(f"- `{script_path}`: Helper tool for {self.name}.")
+
+        # Level 3: Available domain references
+        if self.references:
+            sections.append("\n### Available Domain References (Readable via read_file):")
+            skill_dir = Path(self.metadata.path).parent
+            for ref_name in sorted(self.references.keys()):
+                ref_path = (skill_dir / "references" / ref_name).as_posix()
+                sections.append(f"- `{ref_path}`: Reference documentation.")
+
+        sections.append(f"--- [End Skill: {self.name}] ---\n")
+        return "\n".join(sections)

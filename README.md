@@ -164,10 +164,10 @@ print(f"Active skill: {matched_skill.name}")
 ### 3.4 Running the Test Suite
 
 ```bash
-# Run unit tests (385 tests, ~45s)
+# Run unit tests (391 tests, ~45s)
 pytest tests/unit -q --tb=short
 
-# Run CI-equivalent full test suite (569 passed, 6 skipped, ~67s)
+# Run CI-equivalent full test suite (575 passed, 6 skipped, ~67s)
 CODEPILOT_CI_MODE=true pytest tests/unit tests/integration -q --tb=short
 
 # Verify specific modules
@@ -206,14 +206,17 @@ CodePilot-Agent/
 │   ├── tools/                 # Built-in developer tools (BaseTool implementations)
 │   └── workspace/             # Workspace indexer, resolver & cache
 ├── skills/                    # Built-in standard coding skills
-│   ├── bug-fix/SKILL.md       # Defect diagnosis & verification workflow
-│   ├── code-review/SKILL.md   # Quality & security audit workflow
-│   └── test-debugging/SKILL.md# Flaky & failing test isolation workflow
+│   ├── api-spec-validator/    # FastAPI route & OpenAPI contract validation (scripts/ & references/)
+│   ├── bug-fix/               # Defect diagnosis & verification workflow (references/)
+│   ├── code-review/           # Quality & security audit workflow (references/)
+│   ├── git-workflow/          # Conventional commit & conflict resolution (scripts/ & references/)
+│   ├── security-audit/        # Vulnerability, secret & injection scan (scripts/ & references/)
+│   └── test-debugging/        # Flaky & failing test isolation workflow (references/)
 ├── benchmarks/                # Synthetic & real-world evaluation tasks
 ├── mcp.json                   # Standard MCP server declarations
 ├── pyproject.toml             # Pytest & project build configuration
 └── tests/
-    ├── unit/                  # Fast deterministic unit tests (385 tests)
+    ├── unit/                  # Fast deterministic unit tests (391 tests)
     └── integration/           # MCP, runner & API integration tests (190 tests)
 ```
 
