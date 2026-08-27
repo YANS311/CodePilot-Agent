@@ -1,7 +1,13 @@
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
 norecursedirs = [".git", ".pytest_cache", "venv", ".venv", "benchmarks", "reports", "uploads"]
+addopts = "-p no:cacheprovider"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore::pytest.PytestConfigWarning",
+    "ignore:.*unclosed.*:ResourceWarning",
+]
 markers = [
     "unit: Pure logic tests (no external deps)",
     "integration: Tests needing embedding/LLM/workspace",
