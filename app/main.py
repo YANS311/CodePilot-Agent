@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
@@ -15,18 +16,21 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("LLM base_url: %s", settings.llm_base_url)
+    logger.info("LLM model:    %s", settings.llm_model)
+    logger.info("LLM api_key:  %s...", settings.llm_api_key[:8] if settings.llm_api_key else "(empty)")
+    yield
+
+
 app = FastAPI(
     title="CodePilot Agent",
     description="轻量级 Python Coding Agent",
     version="0.1.0",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-async def _log_config():
-    logger.info("LLM base_url: %s", settings.llm_base_url)
-    logger.info("LLM model:    %s", settings.llm_model)
-    logger.info("LLM api_key:  %s...", settings.llm_api_key[:8] if settings.llm_api_key else "(empty)")
 
 # ── 路由 ──
 app.include_router(chat_router)
