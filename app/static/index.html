@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodePilot Agent</title>
+    <title>CodePilot Agent — MCP & Skills Hub</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,26 +12,49 @@
             background: #0d1117; color: #c9d1d9;
             padding: 24px;
         }
-        .layout { display: flex; gap: 24px; max-width: 1280px; margin: 0 auto; }
+        .layout { display: flex; gap: 24px; max-width: 1380px; margin: 0 auto; }
         .main-col { flex: 1; min-width: 0; }
-        .side-col { width: 320px; flex-shrink: 0; }
+        .side-col { width: 380px; flex-shrink: 0; }
 
-        h1 { color: #58a6ff; margin-bottom: 8px; font-size: 1.5rem; }
-        .subtitle { color: #8b949e; margin-bottom: 24px; font-size: 0.9rem; }
-        .input-area { display: flex; gap: 8px; margin-bottom: 24px; }
-        #task-input {
-            flex: 1; padding: 12px; border: 1px solid #30363d; border-radius: 6px;
-            background: #161b22; color: #c9d1d9; font-size: 14px; font-family: inherit;
-            resize: vertical; min-height: 44px;
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        h1 { color: #58a6ff; font-size: 1.5rem; display: flex; align-items: center; gap: 8px; }
+        .version-tag { font-size: 11px; background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; padding: 2px 8px; border-radius: 12px; }
+        .subtitle { color: #8b949e; margin-bottom: 20px; font-size: 0.9rem; }
+
+        /* ── Quick Skills Bar (Antigravity Style) ── */
+        .skills-bar-container { margin-bottom: 16px; }
+        .bar-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600; display: flex; justify-content: space-between; }
+        .skills-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+        .skill-pill {
+            padding: 6px 12px; background: #161b22; border: 1px solid #30363d;
+            border-radius: 20px; color: #c9d1d9; font-size: 12px; cursor: pointer;
+            display: flex; align-items: center; gap: 6px; transition: all 0.2s;
         }
-        #task-input:focus { border-color: #58a6ff; outline: none; }
+        .skill-pill:hover { border-color: #58a6ff; color: #58a6ff; background: #1c2128; }
+        .skill-pill.active { background: #1f6feb22; border-color: #58a6ff; color: #58a6ff; }
+        .skill-pill .icon { font-size: 13px; }
+
+        /* ── Input Area ── */
+        .input-area { display: flex; gap: 8px; margin-bottom: 16px; }
+        #task-input {
+            flex: 1; padding: 12px 14px; border: 1px solid #30363d; border-radius: 6px;
+            background: #161b22; color: #c9d1d9; font-size: 14px; font-family: inherit;
+            resize: vertical; min-height: 48px; line-height: 1.5;
+        }
+        #task-input:focus { border-color: #58a6ff; outline: none; box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
         #submit-btn {
             padding: 12px 24px; background: #238636; color: #fff; border: none;
             border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;
-            white-space: nowrap;
+            white-space: nowrap; transition: background 0.2s;
         }
         #submit-btn:hover { background: #2ea043; }
         #submit-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+        .active-skill-banner {
+            background: #1c2128; border: 1px solid #58a6ff; border-radius: 6px;
+            padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #58a6ff;
+            display: flex; align-items: center; justify-content: space-between;
+        }
 
         .section { margin-bottom: 20px; }
         .section-title {
@@ -39,7 +62,7 @@
             letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;
         }
 
-        /* Step timeline */
+        /* ── Steps Timeline ── */
         .step-item {
             background: #161b22; border: 1px solid #30363d; border-radius: 6px;
             padding: 14px; margin-bottom: 10px; font-size: 13px;
@@ -62,11 +85,6 @@
             overflow-y: auto; font-size: 12px; color: #8b949e;
         }
         .step-observation::before { content: "Observation: "; color: #3fb950; font-weight: 600; }
-        .step-badge {
-            padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
-        }
-        .step-badge.success { background: #238636; color: #fff; }
-        .step-badge.fail { background: #da3633; color: #fff; }
 
         .diff-box {
             background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
@@ -82,15 +100,10 @@
             background: #2d1013; border: 1px solid #da3633; border-radius: 6px;
             padding: 14px; margin-bottom: 16px; font-size: 13px;
         }
-        .security-card-header {
-            display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-        }
         .security-badge {
             background: #da3633; color: #fff; padding: 2px 10px;
             border-radius: 10px; font-size: 11px; font-weight: 600;
         }
-        .security-type { color: #f85149; font-weight: 600; }
-        .security-reason { color: #c9d1d9; margin-top: 6px; line-height: 1.5; }
 
         /* Markdown answer box */
         .answer-box {
@@ -108,55 +121,21 @@
             background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
             padding: 12px; margin: 10px 0; overflow-x: auto;
         }
-        .answer-box pre code {
-            background: none; padding: 0; color: #c9d1d9; font-size: 13px;
-        }
-        .answer-box ul, .answer-box ol {
-            margin: 8px 0; padding-left: 24px;
-        }
-        .answer-box li { margin-bottom: 4px; }
-        .answer-box h1, .answer-box h2, .answer-box h3 {
-            color: #58a6ff; margin: 12px 0 8px;
-        }
-        .answer-box h1 { font-size: 1.2rem; }
-        .answer-box h2 { font-size: 1.1rem; }
-        .answer-box h3 { font-size: 1rem; }
-        .answer-box strong { color: #f0f6fc; }
-        .answer-box em { color: #8b949e; }
-        .answer-box blockquote {
-            border-left: 3px solid #30363d; padding-left: 12px;
-            color: #8b949e; margin: 8px 0;
-        }
-
-        .new-file-hint {
-            background: #0d2818; border: 1px solid #238636; border-radius: 6px;
-            padding: 10px; font-size: 13px; color: #3fb950; margin-top: 12px;
-        }
+        .answer-box pre code { background: none; padding: 0; color: #c9d1d9; font-size: 13px; }
 
         /* Test Result Card */
         .test-card {
             background: #161b22; border: 1px solid #30363d; border-radius: 6px;
             padding: 16px; margin-bottom: 16px;
         }
-        .test-card-header {
-            display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
-        }
-        .test-card-title {
-            font-size: 0.85rem; color: #8b949e; text-transform: uppercase;
-            letter-spacing: 0.5px; font-weight: 600;
-        }
-        .test-card-badge {
-            padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
-        }
+        .test-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .test-card-title { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .test-card-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
         .test-card-badge.pass { background: #238636; color: #fff; }
         .test-card-badge.fail { background: #da3633; color: #fff; }
-        .test-card-stats {
-            display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px;
-        }
+        .test-card-stats { display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px; }
         .test-stat { display: flex; align-items: center; gap: 4px; }
-        .test-stat .dot {
-            width: 8px; height: 8px; border-radius: 50%;
-        }
+        .test-stat .dot { width: 8px; height: 8px; border-radius: 50%; }
         .test-stat .dot.green { background: #3fb950; }
         .test-stat .dot.red { background: #f85149; }
         .test-card-output {
@@ -174,55 +153,102 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Workspace 面板 ── */
-        .ws-panel {
-            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-            padding: 16px; position: sticky; top: 24px;
+        /* ── Right Panel: Tabs Hub (Antigravity Style) ── */
+        .hub-panel {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            position: sticky; top: 24px; display: flex; flex-direction: column;
+            max-height: calc(100vh - 48px); overflow: hidden;
         }
-        .ws-header {
-            display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 12px;
+        .hub-tabs {
+            display: flex; border-bottom: 1px solid #30363d; background: #0d1117;
+            padding: 4px 4px 0; overflow-x: auto;
         }
-        .ws-title {
-            font-size: 0.85rem; color: #8b949e; text-transform: uppercase;
-            letter-spacing: 0.5px; font-weight: 600;
+        .hub-tab {
+            padding: 8px 12px; background: none; border: none; border-bottom: 2px solid transparent;
+            color: #8b949e; font-size: 12px; font-weight: 600; cursor: pointer;
+            white-space: nowrap; display: flex; align-items: center; gap: 6px;
+            transition: all 0.2s;
         }
-        .ws-refresh {
-            background: none; border: 1px solid #30363d; color: #8b949e;
-            padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+        .hub-tab:hover { color: #c9d1d9; }
+        .hub-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; background: #161b22; border-radius: 6px 6px 0 0; }
+        .tab-badge {
+            background: #30363d; color: #8b949e; font-size: 10px; padding: 1px 6px;
+            border-radius: 10px; font-weight: 600;
         }
-        .ws-refresh:hover { border-color: #58a6ff; color: #58a6ff; }
-        .ws-file-list { max-height: 50vh; overflow-y: auto; }
+        .hub-tab.active .tab-badge { background: #1f6feb; color: #fff; }
+        .tab-content { padding: 16px; overflow-y: auto; flex: 1; display: none; }
+        .tab-content.active { display: block; }
+
+        /* ── Skill Cards ── */
+        .skill-card {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin-bottom: 12px; transition: border-color 0.2s;
+        }
+        .skill-card:hover { border-color: #58a6ff; }
+        .skill-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .skill-name { color: #58a6ff; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .skill-ver { font-size: 10px; color: #8b949e; background: #161b22; padding: 1px 6px; border-radius: 4px; border: 1px solid #30363d; }
+        .skill-desc { font-size: 12px; color: #8b949e; margin-bottom: 8px; line-height: 1.4; }
+        .skill-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+        .skill-tag { font-size: 10px; color: #79c0ff; background: #1c2128; padding: 2px 6px; border-radius: 3px; }
+        .skill-actions { display: flex; gap: 6px; }
+        .btn-skill-sop {
+            flex: 1; padding: 4px 8px; background: #21262d; border: 1px solid #30363d;
+            border-radius: 4px; color: #c9d1d9; font-size: 11px; cursor: pointer; text-align: center;
+        }
+        .btn-skill-sop:hover { border-color: #8b949e; color: #fff; }
+        .btn-skill-use {
+            padding: 4px 10px; background: #238636; border: none; border-radius: 4px;
+            color: #fff; font-size: 11px; font-weight: 600; cursor: pointer;
+        }
+        .btn-skill-use:hover { background: #2ea043; }
+
+        /* ── MCP Cards ── */
+        .mcp-card {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin-bottom: 12px;
+        }
+        .mcp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .mcp-name { color: #f0f6fc; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .mcp-status { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+        .mcp-status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .mcp-status-dot.connected { background: #3fb950; }
+        .mcp-status-dot.disconnected { background: #8b949e; }
+        .mcp-cmd {
+            font-family: monospace; font-size: 11px; color: #79c0ff; background: #161b22;
+            padding: 4px 6px; border-radius: 4px; margin-bottom: 8px; word-break: break-all;
+        }
+        .mcp-tools-toggle {
+            font-size: 11px; color: #58a6ff; cursor: pointer; background: none; border: none; padding: 0;
+        }
+        .mcp-tools-toggle:hover { text-decoration: underline; }
+        .mcp-tool-item {
+            padding: 4px 8px; background: #161b22; border-left: 2px solid #58a6ff;
+            margin-top: 4px; font-size: 11px; border-radius: 0 4px 4px 0;
+        }
+
+        /* ── Security Policy Cards ── */
+        .sec-card {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin-bottom: 12px;
+        }
+        .sec-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 12px; }
+        .sec-item:last-child { border-bottom: none; }
+        .sec-label { color: #8b949e; }
+        .sec-val { color: #f0f6fc; font-weight: 600; font-family: monospace; font-size: 11px; }
+
+        /* ── Workspace Explorer ── */
+        .ws-file-list { max-height: 250px; overflow-y: auto; margin-bottom: 16px; }
         .ws-file-item {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
-            transition: background 0.3s;
+            padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;
         }
         .ws-file-item:hover { background: #1c2128; }
-        .ws-file-item.highlight {
-            background: #1a3a1a; border-left: 3px solid #3fb950;
-            animation: highlight-fade 3s ease-out forwards;
-        }
-        @keyframes highlight-fade {
-            0% { background: #1a3a1a; }
-            70% { background: #1a3a1a; }
-            100% { background: transparent; border-left-color: transparent; }
-        }
         .ws-file-name { color: #58a6ff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ws-file-size { color: #484f58; font-size: 11px; margin-left: 8px; white-space: nowrap; }
-        .ws-file-actions { display: flex; gap: 4px; margin-left: 6px; }
-        .ws-file-btn {
-            background: none; border: none; color: #8b949e; cursor: pointer;
-            font-size: 12px; padding: 2px 4px; border-radius: 3px;
-        }
-        .ws-file-btn:hover { color: #58a6ff; background: #1c2128; }
+        .ws-file-size { color: #484f58; font-size: 11px; margin-left: 8px; }
 
-        /* ── 文件树视图 ── */
-        .tree-view { font-size: 13px; max-height: 30vh; overflow-y: auto; }
-        .tree-item {
-            padding: 2px 0; cursor: pointer; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis;
-        }
+        .tree-view { font-size: 12px; max-height: 250px; overflow-y: auto; }
+        .tree-item { padding: 2px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .tree-item:hover { color: #58a6ff; }
         .tree-dir { color: #8b949e; font-weight: 600; }
         .tree-dir::before { content: "📁 "; }
@@ -230,248 +256,320 @@
         .tree-file.py::before { content: "🐍 "; }
         .tree-file.md::before { content: "📄 "; }
         .tree-file.json::before { content: "📋 "; }
-        .tree-file.txt::before { content: "📝 "; }
         .tree-file.default::before { content: "📄 "; }
-        .tree-indent { padding-left: 16px; }
-        .tree-toggle { cursor: pointer; user-select: none; }
-        .tree-toggle::before { content: "▼ "; font-size: 10px; }
-        .tree-toggle.collapsed::before { content: "▶ "; }
-        .tree-summary {
-            font-size: 11px; color: #484f58; margin-top: 8px;
-            padding: 6px 8px; background: #0d1117; border-radius: 4px;
-        }
+        .tree-indent { padding-left: 14px; }
 
-        /* 预览模态框 */
+        /* ── Modals ── */
         .modal-overlay {
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-            z-index: 100; justify-content: center; align-items: center;
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+            z-index: 1000; justify-content: center; align-items: center;
         }
         .modal-overlay.active { display: flex; }
         .modal-box {
             background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-            width: 90%; max-width: 800px; max-height: 80vh; display: flex; flex-direction: column;
+            width: 90%; max-width: 860px; max-height: 85vh; display: flex; flex-direction: column;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         }
         .modal-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 16px; border-bottom: 1px solid #30363d;
+            padding: 14px 18px; border-bottom: 1px solid #30363d;
         }
-        .modal-header span { color: #58a6ff; font-weight: 600; font-size: 14px; }
+        .modal-header span { color: #58a6ff; font-weight: 600; font-size: 15px; }
         .modal-close {
-            background: none; border: none; color: #8b949e; font-size: 20px;
+            background: none; border: none; color: #8b949e; font-size: 22px;
             cursor: pointer; padding: 0 4px;
         }
         .modal-close:hover { color: #f85149; }
-        .modal-body {
-            padding: 16px; overflow: auto; flex: 1;
-        }
-        .modal-body pre {
-            margin: 0; font-family: monospace; font-size: 13px;
-            white-space: pre-wrap; color: #c9d1d9; line-height: 1.5;
-        }
+        .modal-body { padding: 18px; overflow-y: auto; flex: 1; line-height: 1.6; }
         .modal-footer {
-            padding: 10px 16px; border-top: 1px solid #30363d;
+            padding: 12px 18px; border-top: 1px solid #30363d;
             display: flex; justify-content: space-between; align-items: center;
         }
-        .modal-footer a {
-            color: #58a6ff; text-decoration: none; font-size: 13px;
-        }
-        .modal-footer a:hover { text-decoration: underline; }
-        .truncated-notice { color: #e3b341; font-size: 12px; }
 
-        @media (max-width: 768px) {
-            .layout { flex-direction: column; }
-            .side-col { width: 100%; }
-        }
+        /* Modal Markdown Content */
+        .sop-markdown { font-size: 13px; color: #c9d1d9; }
+        .sop-markdown h1, .sop-markdown h2, .sop-markdown h3 { color: #58a6ff; margin: 12px 0 6px; }
+        .sop-markdown ol, .sop-markdown ul { padding-left: 20px; margin: 8px 0; }
+        .sop-markdown code { background: #0d1117; padding: 2px 6px; border-radius: 4px; color: #79c0ff; }
+        .sop-markdown pre { background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto; }
 
-        /* ── Demo 按钮 ── */
-        .demo-bar {
-            display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
-        }
-        .demo-btn {
-            padding: 8px 16px; background: #161b22; border: 1px solid #30363d;
-            border-radius: 6px; color: #8b949e; font-size: 13px; cursor: pointer;
-            transition: all 0.2s;
-        }
-        .demo-btn:hover { border-color: #58a6ff; color: #58a6ff; }
-        .demo-btn.bug-fix:hover { border-color: #3fb950; color: #3fb950; }
-        .demo-btn.repo:hover { border-color: #a371f7; color: #a371f7; }
-        .demo-btn.security:hover { border-color: #f85149; color: #f85149; }
-        .demo-label {
-            font-size: 11px; color: #484f58; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-bottom: 4px;
-        }
-
-        /* ── Evidence Section ── */
-        .evidence-card {
-            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-            padding: 12px; margin-bottom: 10px; font-size: 13px;
-        }
-        .evidence-claim {
-            color: #f0f6fc; font-weight: 600; margin-bottom: 8px;
-            padding-left: 12px; border-left: 3px solid #58a6ff;
-        }
-        .evidence-item {
-            display: flex; align-items: center; gap: 8px;
-            padding: 4px 0 4px 20px; color: #8b949e; font-size: 12px;
-        }
-        .evidence-file { color: #58a6ff; cursor: pointer; }
-        .evidence-file:hover { text-decoration: underline; }
-        .evidence-symbol { color: #d2a8ff; font-family: monospace; }
-        .evidence-lines { color: #484f58; }
-        .confidence-badge {
-            display: inline-block; padding: 2px 10px; border-radius: 10px;
-            font-size: 12px; font-weight: 600;
-        }
-        .confidence-high { background: #238636; color: #fff; }
-        .confidence-mid { background: #bb8009; color: #fff; }
-        .confidence-low { background: #da3633; color: #fff; }
-
-        /* ── D23: Unified Output Sections ── */
-        .metrics-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 10px; margin-bottom: 8px;
-        }
-        .metric-card {
-            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-            padding: 10px 12px; text-align: center;
-        }
-        .metric-value {
-            font-size: 1.3rem; font-weight: 700; color: #f0f6fc;
-        }
-        .metric-label {
-            font-size: 0.75rem; color: #8b949e; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-top: 4px;
-        }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 8px; }
+        .metric-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; text-align: center; }
+        .metric-value { font-size: 1.3rem; font-weight: 700; color: #f0f6fc; }
+        .metric-label { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
         .metric-card.success .metric-value { color: #3fb950; }
         .metric-card.fail .metric-value { color: #f85149; }
-        .metric-card.block .metric-value { color: #da3633; }
-        .tools-used-list {
-            display: flex; flex-wrap: wrap; gap: 6px;
-        }
-        .tool-tag {
-            background: #1c2128; border: 1px solid #30363d; border-radius: 4px;
-            padding: 3px 10px; font-size: 12px; color: #79c0ff; font-family: monospace;
-        }
-        .mode-badge {
-            display: inline-block; padding: 2px 10px; border-radius: 10px;
-            font-size: 11px; font-weight: 600; text-transform: uppercase;
-            margin-left: 8px;
-        }
+        .tools-used-list { display: flex; flex-wrap: wrap; gap: 6px; }
+        .tool-tag { background: #1c2128; border: 1px solid #30363d; border-radius: 4px; padding: 3px 10px; font-size: 12px; color: #79c0ff; font-family: monospace; }
+        .mode-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-left: 8px; }
         .mode-react { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
-        .mode-repo { background: #a371f733; color: #d2a8ff; border: 1px solid #a371f7; }
-        .mode-security { background: #da363333; color: #f85149; border: 1px solid #da3633; }
-        .mode-eval { background: #23863633; color: #3fb950; border: 1px solid #238636; }
     </style>
 </head>
 <body>
-    <h1>CodePilot Agent</h1>
-    <p class="subtitle">Python Coding Agent &mdash; 输入任务，Agent 自动搜索、读取、修改代码</p>
-
-    <div id="workspace-banner" style="display:none;background:#161b22;border:1px solid #238636;border-radius:6px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#3fb950;">
-        当前 Workspace: <code id="workspace-id-display"></code>
+    <div class="header-bar">
+        <h1>
+            <span>CodePilot Agent</span>
+            <span class="version-tag">v2.0 ReAct Harness</span>
+        </h1>
+        <div style="font-size:12px;color:#8b949e;">
+            LLM: <span id="header-llm" style="color:#58a6ff;font-weight:600;">deepseek-v4-flash</span>
+        </div>
     </div>
+    <p class="subtitle">Google Antigravity-Inspired Coding Agent &mdash; 统一工具运行时、MCP 协议集成与渐进式 Agent 技能系统</p>
 
     <div class="layout">
-        <!-- 左侧：主内容 -->
+        <!-- ════════ 左侧：任务交互与执行轨迹 ════════ -->
         <div class="main-col">
-            <div class="demo-bar">
-                <span class="demo-label">Quick Demo:</span>
-                <button class="demo-btn bug-fix" onclick="runDemo('demo-bug-fix')">Bug Fix</button>
-                <button class="demo-btn repo" onclick="runDemo('demo-repo-analysis')">Repo Analysis</button>
-                <button class="demo-btn security" onclick="runDemo('demo-security')">Security</button>
+            <!-- Antigravity 风格：技能工作流直达快捷栏 -->
+            <div class="skills-bar-container">
+                <div class="bar-label">
+                    <span>⚡ 常用技能工作流 (Skills Direct Launch)</span>
+                    <span style="color:#58a6ff;cursor:pointer;" onclick="switchTab('skills')">管理全部 6 项技能 &rarr;</span>
+                </div>
+                <div class="skills-pills">
+                    <button class="skill-pill" onclick="triggerQuickSkill('bug-fix', '修复 examples/buggy_calculator.py 中 subtract 函数的 bug 并验证')">
+                        <span class="icon">⚡</span> <span>Bug Fix (缺陷修复)</span>
+                    </button>
+                    <button class="skill-pill" onclick="triggerQuickSkill('security-audit', '对 workspace 中的代码与配置进行全面安全漏洞与注入审计')">
+                        <span class="icon">🛡️</span> <span>Security Audit (安全审计)</span>
+                    </button>
+                    <button class="skill-pill" onclick="triggerQuickSkill('code-review', '对 workspace/src 目录下的代码质量、可维护性与测试覆盖率做 Code Review')">
+                        <span class="icon">🔍</span> <span>Code Review (代码评审)</span>
+                    </button>
+                    <button class="skill-pill" onclick="triggerQuickSkill('api-spec-validator', '检查 FastAPI 路由与 OpenAPI 接口契约规范')">
+                        <span class="icon">📐</span> <span>API Spec (接口规范)</span>
+                    </button>
+                    <button class="skill-pill" onclick="triggerQuickSkill('git-workflow', '检查当前工作区 git status 与未暂存变更，生成规范的提交')">
+                        <span class="icon">🌿</span> <span>Git Workflow (工作流)</span>
+                    </button>
+                    <button class="skill-pill" onclick="triggerQuickSkill('test-debugging', '隔离并定位 workspace/tests 中失败或 Flaky 的单元测试')">
+                        <span class="icon">🧪</span> <span>Test Debug (测试排错)</span>
+                    </button>
+                </div>
             </div>
+
+            <!-- 任务输入 -->
             <div class="input-area">
-                <textarea id="task-input" placeholder="例如：把 buggy_calculator.py 里的 subtract 函数改正确" rows="2"></textarea>
-                <button id="submit-btn" onclick="submitTask()">运行</button>
+                <textarea id="task-input" placeholder="输入自然语言编码、排错或审计任务，Agent 将自动匹配 Skill 并执行工具调度..." rows="2"></textarea>
+                <button id="submit-btn" onclick="submitTask()">运行任务</button>
             </div>
 
-            <div id="lock-status" style="display:none; padding: 8px 12px; background: #1c1e24; border: 1px solid #d29922; border-radius: 6px; margin-bottom: 12px; font-size: 13px; color: #d29922;">
-                <span id="lock-status-text"></span>
+            <div id="active-skill-display" class="active-skill-banner" style="display:none;">
+                <div>
+                    <strong>🎯 当前激活技能：</strong>
+                    <span id="active-skill-name"></span> &mdash;
+                    <span id="active-skill-step-hint" style="color:#8b949e;">Level 2 流程已按需注入上下文</span>
+                </div>
+                <button onclick="viewActiveSkillSop()" style="background:#21262d;border:1px solid #30363d;color:#58a6ff;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;">查看 SOP</button>
             </div>
 
-            <div id="loading"><span class="spinner"></span>Agent 正在执行任务...</div>
+            <div id="loading"><span class="spinner"></span>Agent 正在执行 ReAct 闭环思考与工具调度...</div>
 
+            <!-- 执行结果输出 -->
             <div id="results" style="display:none;">
                 <div id="warn-container"></div>
-
                 <div id="security-container"></div>
-
                 <div id="test-result-container"></div>
 
-                <!-- D23: Unified Summary with Mode Badge -->
+                <!-- Unified Summary -->
                 <div class="section" id="summary-section">
                     <div class="section-title">Summary <span id="mode-badge"></span></div>
                     <div class="answer-box" id="answer-box"></div>
                 </div>
 
-                <!-- D23: Execution Trace -->
+                <!-- Execution Trace -->
                 <div class="section" id="trace-section" style="display:none;">
                     <div class="section-title">Execution Trace</div>
                     <div id="trace-list"></div>
                 </div>
 
-                <!-- D23: Tools Used -->
+                <!-- Tools Used -->
                 <div class="section" id="tools-section" style="display:none;">
                     <div class="section-title">Tools Used</div>
                     <div id="tools-list" class="tools-used-list"></div>
                 </div>
 
-                <!-- D23: Metrics -->
+                <!-- Metrics -->
                 <div class="section" id="metrics-section" style="display:none;">
                     <div class="section-title">Metrics</div>
                     <div id="metrics-display" class="metrics-grid"></div>
                 </div>
 
-                <div class="section" id="evidence-section" style="display:none;">
-                    <div class="section-title">Evidence & Confidence</div>
-                    <div id="evidence-confidence" style="margin-bottom:12px;"></div>
-                    <div id="evidence-list"></div>
-                </div>
-
+                <!-- ReAct 执行步骤 -->
                 <div class="section" id="steps-section">
                     <div class="section-title">执行步骤 (Thought → Action → Observation)</div>
                     <div id="steps-list"></div>
                 </div>
 
+                <!-- Git Diff -->
                 <div class="section" id="diff-section" style="display:none;">
-                    <div class="section-title">Git Diff</div>
+                    <div class="section-title">Git Diff 变更</div>
                     <div class="diff-box" id="diff-content"></div>
                 </div>
             </div>
-
-            <div id="new-file-hint" style="display:none;" class="new-file-hint"></div>
         </div>
 
-        <!-- 右侧：Workspace 文件面板 -->
+        <!-- ════════ 右侧：Google Antigravity 风格定制化与扩展中心 (Hub) ════════ -->
         <div class="side-col">
-            <div class="ws-panel">
-                <div class="ws-header">
-                    <span class="ws-title">Workspace 文件</span>
-                    <button class="ws-refresh" onclick="refreshFileList()">刷新</button>
-                </div>
-                <div style="margin-bottom:12px;">
-                    <label for="upload-input" class="ws-refresh" style="display:inline-block;cursor:pointer;text-align:center;">
-                        上传项目
-                    </label>
-                    <input id="upload-input" type="file" accept=".zip,.py,.txt,.md,.json" style="display:none;" onchange="handleUpload(this)">
-                    <div id="upload-status" style="font-size:12px;color:#8b949e;margin-top:6px;"></div>
-                </div>
-                <div id="ws-file-list" class="ws-file-list">
-                    <div style="color:#484f58;font-size:13px;">加载中...</div>
+            <div class="hub-panel">
+                <!-- 顶部 Tab 导航 -->
+                <div class="hub-tabs">
+                    <button class="hub-tab active" id="tab-btn-workspace" onclick="switchTab('workspace')">
+                        📂 工作区
+                    </button>
+                    <button class="hub-tab" id="tab-btn-skills" onclick="switchTab('skills')">
+                        ⚡ 技能库 <span class="tab-badge" id="badge-skills">6</span>
+                    </button>
+                    <button class="hub-tab" id="tab-btn-mcp" onclick="switchTab('mcp')">
+                        🔌 MCP 插件 <span class="tab-badge" id="badge-mcp">2</span>
+                    </button>
+                    <button class="hub-tab" id="tab-btn-security" onclick="switchTab('security')">
+                        🛡️ 沙箱与策略
+                    </button>
                 </div>
 
-                <div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px;">
-                    <div class="section-title" style="margin-bottom:8px;">文件结构</div>
-                    <div id="file-tree" class="tree-view">
+                <!-- ── TAB 1: 工作区文件浏览 ── -->
+                <div class="tab-content active" id="tab-workspace">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <span style="font-size:12px;color:#8b949e;text-transform:uppercase;font-weight:600;">Workspace 文件</span>
+                        <button class="btn-skill-sop" style="flex:none;" onclick="refreshFileList()">刷新</button>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label for="upload-input" class="btn-skill-sop" style="display:block;cursor:pointer;text-align:center;padding:6px;">
+                            📤 上传新项目包 (.zip)
+                        </label>
+                        <input id="upload-input" type="file" accept=".zip,.py,.txt,.md,.json" style="display:none;" onchange="handleUpload(this)">
+                        <div id="upload-status" style="font-size:11px;color:#8b949e;margin-top:4px;"></div>
+                    </div>
+                    <div id="ws-file-list" class="ws-file-list">
                         <div style="color:#484f58;font-size:12px;">加载中...</div>
                     </div>
-                    <div id="tree-summary" class="tree-summary" style="display:none;"></div>
+
+                    <div style="border-top:1px solid #30363d;padding-top:12px;">
+                        <div class="section-title" style="margin-bottom:6px;">文件目录树</div>
+                        <div id="file-tree" class="tree-view">
+                            <div style="color:#484f58;font-size:12px;">加载中...</div>
+                        </div>
+                        <div id="tree-summary" style="font-size:11px;color:#8b949e;margin-top:6px;"></div>
+                    </div>
+                </div>
+
+                <!-- ── TAB 2: Agent Skills 技能库 ── -->
+                <div class="tab-content" id="tab-skills">
+                    <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:12px;color:#8b949e;text-transform:uppercase;font-weight:600;">已就绪 Skills (Level 1-3)</span>
+                        <button class="btn-skill-sop" style="flex:none;" onclick="loadAgentSkills()">刷新</button>
+                    </div>
+                    <div id="skills-list-container">
+                        <div style="color:#484f58;font-size:12px;">加载技能中...</div>
+                    </div>
+                </div>
+
+                <!-- ── TAB 3: MCP 协议插件中心 ── -->
+                <div class="tab-content" id="tab-mcp">
+                    <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:12px;color:#8b949e;text-transform:uppercase;font-weight:600;">已挂载 MCP 服务</span>
+                        <button class="btn-skill-sop" style="flex:none;" onclick="openAddMcpModal()">+ 添加 Server</button>
+                    </div>
+                    <div id="mcp-list-container">
+                        <div style="color:#484f58;font-size:12px;">加载 MCP 状态中...</div>
+                    </div>
+                </div>
+
+                <!-- ── TAB 4: 安全策略与执行沙箱 ── -->
+                <div class="tab-content" id="tab-security">
+                    <div style="margin-bottom:12px;font-size:12px;color:#8b949e;text-transform:uppercase;font-weight:600;">
+                        运行时安全策略 (Defense-in-Depth)
+                    </div>
+                    <div class="sec-card">
+                        <div class="sec-item">
+                            <span class="sec-label">权限策略模型</span>
+                            <span class="sec-val" style="color:#3fb950;">Standard Coding (READ+WRITE+EXEC)</span>
+                        </div>
+                        <div class="sec-item">
+                            <span class="sec-label">Workspace 边界拦截</span>
+                            <span class="sec-val" style="color:#58a6ff;">safe_resolve (pathlib 严格校验)</span>
+                        </div>
+                        <div class="sec-item">
+                            <span class="sec-label">测试执行沙箱</span>
+                            <span class="sec-val">DockerRunner / LocalRunner</span>
+                        </div>
+                        <div class="sec-item">
+                            <span class="sec-label">过量访问熔断</span>
+                            <span class="sec-val">60s / 20 次安全拦截</span>
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:#8b949e;line-height:1.5;">
+                        💡 <strong>设计理念</strong>：Prompt Guardrail 仅用于引导，系统真实安全边界由 PermissionPolicy 与执行沙箱在运行时强制拦截。
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 预览模态框 -->
+    <!-- ════════ 模态框 1: Skill SOP (SKILL.md) 详情 ════════ -->
+    <div class="modal-overlay" id="skill-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <span id="skill-modal-title">Skill SOP</span>
+                    <span id="skill-modal-ver" class="version-tag" style="margin-left:8px;">v1.0.0</span>
+                </div>
+                <button class="modal-close" onclick="closeSkillModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="skill-modal-tags" style="display:flex;gap:6px;margin-bottom:12px;"></div>
+                <div class="section-title" style="margin-bottom:6px;">Level 2 流程指令 (SKILL.md)</div>
+                <div id="skill-modal-content" class="sop-markdown"></div>
+
+                <div id="skill-modal-resources" style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px;display:none;">
+                    <div class="section-title" style="margin-bottom:6px;">Level 3 辅助资源 (Scripts & References)</div>
+                    <div id="skill-resources-list" style="font-size:12px;color:#79c0ff;font-family:monospace;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-skill-use" id="btn-use-modal-skill" onclick="useCurrentModalSkill()">⚡ 选用此技能填入任务</button>
+                <button class="btn-skill-sop" onclick="closeSkillModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════ 模态框 2: 添加 MCP Server ════════ -->
+    <div class="modal-overlay" id="mcp-add-modal">
+        <div class="modal-box" style="max-width:500px;">
+            <div class="modal-header">
+                <span>添加外部 MCP Server</span>
+                <button class="modal-close" onclick="closeAddMcpModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">Server 名称</label>
+                    <input id="mcp-input-name" placeholder="例如: memory / github / sqlite" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">传输协议 (Transport)</label>
+                    <select id="mcp-input-transport" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                        <option value="stdio">stdio (本地子进程 JSON-RPC)</option>
+                        <option value="sse">sse (远程 HTTP/SSE 协议)</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">命令 / URL</label>
+                    <input id="mcp-input-cmd" placeholder="stdio 命令 (如 npx) 或 SSE URL (如 http://...)" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">参数 (Args，空格分隔)</label>
+                    <input id="mcp-input-args" placeholder="-y @modelcontextprotocol/server-memory" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-skill-use" onclick="submitAddMcpServer()">立即连接并挂载</button>
+                <button class="btn-skill-sop" onclick="closeAddMcpModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════ 模态框 3: 文件预览 ════════ -->
     <div class="modal-overlay" id="preview-modal">
         <div class="modal-box">
             <div class="modal-header">
@@ -482,232 +580,290 @@
                 <pre id="preview-content"></pre>
             </div>
             <div class="modal-footer">
-                <span id="preview-truncated" class="truncated-notice" style="display:none;">文件过大，内容已截断（最大 100KB）</span>
-                <a id="preview-download" href="#">下载此文件</a>
+                <span id="preview-truncated" class="truncated-notice" style="display:none;">文件过大，内容已截断</span>
+                <a id="preview-download" href="#" style="color:#58a6ff;text-decoration:none;font-size:13px;">下载此文件</a>
             </div>
         </div>
     </div>
 
+    <!-- ════════ 核心前端逻辑 ════════ -->
     <script>
-    // ── 配置 marked.js ──
     marked.setOptions({ breaks: true, gfm: true });
 
-    // ── 文件树视图 ──
-    async function refreshFileTree() {
-        const treeEl = document.getElementById('file-tree');
-        const summaryEl = document.getElementById('tree-summary');
-        try {
-            let url = '/api/workspace/index';
-            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error('加载失败');
-            const data = await resp.json();
-            renderFileTree(data.tree, treeEl);
-            // 显示摘要
-            if (data.summary) {
-                const s = data.summary;
-                summaryEl.textContent = `共 ${s.total_files} 个文件, ${s.python_files} 个 Python 文件`;
-                summaryEl.style.display = 'block';
-            }
-        } catch (e) {
-            treeEl.innerHTML = `<div style="color:#484f58;font-size:12px;">${escapeHtml(e.message)}</div>`;
-        }
-    }
-
-    function renderFileTree(tree, container, depth = 0, parentPath = '') {
-        container.innerHTML = '';
-        if (!tree || typeof tree !== 'object') return;
-
-        // 渲染当前目录的文件
-        const files = tree.files || [];
-        for (const fname of files) {
-            const fileItem = document.createElement('div');
-            const ext = fname.split('.').pop().toLowerCase();
-            const extClass = ['py', 'md', 'json', 'txt'].includes(ext) ? ext : 'default';
-            fileItem.className = `tree-item tree-file ${extClass}`;
-            fileItem.style.paddingLeft = (depth * 16) + 'px';
-            fileItem.textContent = fname;
-            const filePath = parentPath ? `${parentPath}/${fname}` : fname;
-            fileItem.onclick = (e) => {
-                e.stopPropagation();
-                previewFile(filePath);
-            };
-            container.appendChild(fileItem);
-        }
-
-        // 渲染子目录
-        const dirs = tree.dirs || {};
-        for (const [dirName, subNode] of Object.entries(dirs)) {
-            const dirItem = document.createElement('div');
-            dirItem.className = 'tree-item tree-dir';
-            dirItem.style.paddingLeft = (depth * 16) + 'px';
-            dirItem.textContent = dirName;
-
-            const childContainer = document.createElement('div');
-            childContainer.className = 'tree-indent';
-            childContainer.style.display = 'block';
-
-            const subPath = parentPath ? `${parentPath}/${dirName}` : dirName;
-            renderFileTree(subNode, childContainer, depth + 1, subPath);
-
-            let expanded = true;
-            dirItem.onclick = () => {
-                expanded = !expanded;
-                childContainer.style.display = expanded ? 'block' : 'none';
-                dirItem.classList.toggle('collapsed', !expanded);
-            };
-
-            container.appendChild(dirItem);
-            container.appendChild(childContainer);
-        }
-    }
-
-    // ── Demo 功能 ──
-    async function runDemo(demoId) {
-        const input = document.getElementById('task-input');
-        try {
-            const resp = await fetch('/api/demo', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ demo_id: demoId, workspace_id: currentWorkspaceId }),
-            });
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || '加载 Demo 失败');
-            }
-            const data = await resp.json();
-            input.value = data.task;
-            input.focus();
-            // 自动提交
-            submitTask();
-        } catch (e) {
-            alert('Demo 错误: ' + e.message);
-        }
-    }
-
-    // ── Workspace 文件管理 ──
-    let lastKnownFiles = new Set();
     let currentWorkspaceId = null;
+    let currentModalSkillData = null;
+    let agentSkillsCache = [];
 
-    async function refreshFileList() {
-        const listEl = document.getElementById('ws-file-list');
+    // ── Tab 切换 ──
+    function switchTab(tabName) {
+        document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+        const tabBtn = document.getElementById('tab-btn-' + tabName);
+        const tabContent = document.getElementById('tab-' + tabName);
+        if (tabBtn && tabContent) {
+            tabBtn.classList.add('active');
+            tabContent.classList.add('active');
+        }
+
+        if (tabName === 'skills') loadAgentSkills();
+        if (tabName === 'mcp') loadMcpServers();
+    }
+
+    // ── 快捷技能点击 ──
+    function triggerQuickSkill(name, prompt) {
+        const input = document.getElementById('task-input');
+        input.value = prompt;
+        input.focus();
+
+        const banner = document.getElementById('active-skill-display');
+        const nameEl = document.getElementById('active-skill-name');
+        nameEl.textContent = name;
+        banner.style.display = 'flex';
+    }
+
+    // ── 加载 Agent Skills (Level 1-3) ──
+    async function loadAgentSkills() {
+        const container = document.getElementById('skills-list-container');
         try {
-            let url = '/api/files';
-            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error('加载失败');
+            const resp = await fetch('/api/agent-skills');
+            if (!resp.ok) throw new Error('无法拉取技能库');
             const data = await resp.json();
-            renderFileList(data.files);
+            agentSkillsCache = data.skills || [];
+            document.getElementById('badge-skills').textContent = agentSkillsCache.length;
+
+            if (agentSkillsCache.length === 0) {
+                container.innerHTML = '<div style="color:#8b949e;font-size:12px;">暂无可用技能</div>';
+                return;
+            }
+
+            container.innerHTML = agentSkillsCache.map(s => `
+                <div class="skill-card">
+                    <div class="skill-header">
+                        <span class="skill-name">⚡ ${escapeHtml(s.name)}</span>
+                        <span class="skill-ver">v${escapeHtml(s.version || '1.0.0')}</span>
+                    </div>
+                    <div class="skill-desc">${escapeHtml(s.description)}</div>
+                    <div class="skill-tags">
+                        ${(s.tags || []).map(t => `<span class="skill-tag">#${escapeHtml(t)}</span>`).join('')}
+                    </div>
+                    <div class="skill-actions">
+                        <button class="btn-skill-sop" onclick="openSkillModal('${escapeJs(s.name)}')">📄 查看 SOP (SKILL.md)</button>
+                        <button class="btn-skill-use" onclick="useSkillByName('${escapeJs(s.name)}')">⚡ 选用</button>
+                    </div>
+                </div>
+            `).join('');
         } catch (e) {
-            listEl.innerHTML = `<div style="color:#da3633;font-size:13px;">${escapeHtml(e.message)}</div>`;
+            container.innerHTML = `<div style="color:#da3633;font-size:12px;">加载失败: ${escapeHtml(e.message)}</div>`;
         }
     }
 
-    function renderFileList(files) {
-        const listEl = document.getElementById('ws-file-list');
-        // 按路径排序
-        files.sort((a, b) => a.path.localeCompare(b.path));
+    // ── 查看 Skill SOP 模态框 ──
+    async function openSkillModal(name) {
+        try {
+            const resp = await fetch('/api/agent-skills/' + encodeURIComponent(name));
+            if (!resp.ok) throw new Error('无法读取技能 SOP 详情');
+            const data = await resp.json();
+            currentModalSkillData = data;
 
-        listEl.innerHTML = '';
-        if (files.length === 0) {
-            listEl.innerHTML = '<div style="color:#484f58;font-size:13px;">workspace 为空</div>';
+            document.getElementById('skill-modal-title').textContent = 'Skill: ' + data.name;
+            document.getElementById('skill-modal-ver').textContent = 'v' + (data.metadata?.version || '1.0.0');
+            
+            const tagsEl = document.getElementById('skill-modal-tags');
+            tagsEl.innerHTML = (data.metadata?.tags || []).map(t => `<span class="skill-tag">#${escapeHtml(t)}</span>`).join('');
+
+            document.getElementById('skill-modal-content').innerHTML = marked.parse(data.instruction_markdown || '无详细指令');
+
+            const resSection = document.getElementById('skill-modal-resources');
+            const resList = document.getElementById('skill-resources-list');
+            const hasScripts = data.scripts && Object.keys(data.scripts).length > 0;
+            const hasRefs = data.references && Object.keys(data.references).length > 0;
+
+            if (hasScripts || hasRefs) {
+                resSection.style.display = 'block';
+                let items = [];
+                if (hasScripts) items.push(...Object.keys(data.scripts).map(k => `📜 scripts/${escapeHtml(k)}`));
+                if (hasRefs) items.push(...Object.keys(data.references).map(k => `📘 references/${escapeHtml(k)}`));
+                resList.innerHTML = items.join('<br>');
+            } else {
+                resSection.style.display = 'none';
+            }
+
+            document.getElementById('skill-modal').classList.add('active');
+        } catch (e) {
+            alert('查看失败: ' + e.message);
+        }
+    }
+
+    function closeSkillModal() {
+        document.getElementById('skill-modal').classList.remove('active');
+    }
+
+    function useCurrentModalSkill() {
+        if (currentModalSkillData) {
+            useSkillByName(currentModalSkillData.name);
+            closeSkillModal();
+        }
+    }
+
+    function useSkillByName(name) {
+        const presets = {
+            'bug-fix': '修复 examples/buggy_calculator.py 中 subtract 函数的 bug 并验证',
+            'security-audit': '对 workspace 代码进行安全审计，检查潜在注入与越权漏洞',
+            'code-review': '对 workspace/src 目录下的代码进行详细 Code Review',
+            'api-spec-validator': '验证 workspace 中的 FastAPI 接口与 OpenAPI 规范契约',
+            'git-workflow': '查看 git status 与 diff，并整理规范的 Conventional Commit',
+            'test-debugging': '排查 workspace/tests 中失败的单元测试用例'
+        };
+        const prompt = presets[name] || `使用 ${name} 技能执行当前工作区任务`;
+        triggerQuickSkill(name, prompt);
+    }
+
+    function viewActiveSkillSop() {
+        const name = document.getElementById('active-skill-name').textContent;
+        if (name) openSkillModal(name);
+    }
+
+    // ── 加载 MCP Servers ──
+    async function loadMcpServers() {
+        const container = document.getElementById('mcp-list-container');
+        try {
+            const resp = await fetch('/api/mcp/servers');
+            if (!resp.ok) throw new Error('无法拉取 MCP 状态');
+            const data = await resp.json();
+            const servers = data.servers || [];
+            document.getElementById('badge-mcp').textContent = servers.length;
+
+            if (servers.length === 0) {
+                container.innerHTML = `
+                    <div style="color:#8b949e;font-size:12px;padding:12px;background:#0d1117;border-radius:6px;text-align:center;">
+                        暂无已连接的 MCP Server<br>
+                        <button class="btn-skill-use" style="margin-top:8px;" onclick="openAddMcpModal()">+ 连接 MCP Server</button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = servers.map(s => `
+                <div class="mcp-card">
+                    <div class="mcp-header">
+                        <span class="mcp-name">🔌 ${escapeHtml(s.name)}</span>
+                        <div class="mcp-status">
+                            <span class="mcp-status-dot ${s.is_connected ? 'connected' : 'disconnected'}"></span>
+                            <span style="color:${s.is_connected ? '#3fb950' : '#8b949e'}">${s.is_connected ? '已连接' : '未连接'}</span>
+                        </div>
+                    </div>
+                    <div class="mcp-cmd">${escapeHtml(s.command || s.url || 'stdio transport')}</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:11px;color:#8b949e;">动态工具: <strong style="color:#58a6ff;">${s.tools_count}</strong> 个</span>
+                        <button class="mcp-tools-toggle" onclick="toggleMcpTools('${escapeJs(s.name)}')">查看工具 &darr;</button>
+                    </div>
+                    <div id="mcp-tools-${escapeHtml(s.name)}" style="display:none;margin-top:8px;"></div>
+                </div>
+            `).join('');
+        } catch (e) {
+            container.innerHTML = `<div style="color:#da3633;font-size:12px;">加载失败: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    async function toggleMcpTools(serverName) {
+        const el = document.getElementById('mcp-tools-' + serverName);
+        if (!el) return;
+        if (el.style.display === 'block') {
+            el.style.display = 'none';
             return;
         }
 
-        const currentPaths = new Set(files.map(f => f.path));
-
-        for (const f of files) {
-            const item = document.createElement('div');
-            item.className = 'ws-file-item';
-            const sizeStr = formatSize(f.size);
-
-            // 高亮新文件（之前不在列表中的文件）
-            if (lastKnownFiles.size > 0 && !lastKnownFiles.has(f.path)) {
-                item.classList.add('highlight');
+        try {
+            const resp = await fetch('/api/tools');
+            const data = await resp.json();
+            const tools = (data.tools || []).filter(t => t.server === serverName);
+            if (tools.length === 0) {
+                el.innerHTML = '<div style="font-size:11px;color:#8b949e;">暂无暴露工具</div>';
+            } else {
+                el.innerHTML = tools.map(t => `
+                    <div class="mcp-tool-item">
+                        <strong>${escapeHtml(t.name)}</strong>: ${escapeHtml(t.description)}
+                    </div>
+                `).join('');
             }
-
-            item.innerHTML = `
-                <span class="ws-file-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</span>
-                <span class="ws-file-size">${sizeStr}</span>
-                <div class="ws-file-actions">
-                    <button class="ws-file-btn" title="预览" onclick="previewFile('${escapeJs(f.path)}')">&#128065;</button>
-                    <button class="ws-file-btn" title="下载" onclick="downloadFile('${escapeJs(f.path)}')">&#11015;</button>
-                </div>
-            `;
-            item.querySelector('.ws-file-name').addEventListener('click', () => previewFile(f.path));
-            listEl.appendChild(item);
+            el.style.display = 'block';
+        } catch (e) {
+            el.innerHTML = `<div style="color:#da3633;font-size:11px;">加载工具失败</div>`;
+            el.style.display = 'block';
         }
-
-        lastKnownFiles = currentPaths;
     }
 
-    function formatSize(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    function openAddMcpModal() {
+        document.getElementById('mcp-add-modal').classList.add('active');
     }
 
-    async function previewFile(filePath) {
-        const modal = document.getElementById('preview-modal');
-        const filenameEl = document.getElementById('preview-filename');
-        const contentEl = document.getElementById('preview-content');
-        const truncatedEl = document.getElementById('preview-truncated');
-        const downloadEl = document.getElementById('preview-download');
+    function closeAddMcpModal() {
+        document.getElementById('mcp-add-modal').classList.remove('active');
+    }
 
-        filenameEl.textContent = filePath;
-        contentEl.textContent = '加载中...';
-        truncatedEl.style.display = 'none';
-        let downloadUrl = '/api/files/download?path=' + encodeURIComponent(filePath);
-        if (currentWorkspaceId) downloadUrl += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
-        downloadEl.href = downloadUrl;
-        modal.classList.add('active');
+    async function submitAddMcpServer() {
+        const name = document.getElementById('mcp-input-name').value.trim();
+        const transport = document.getElementById('mcp-input-transport').value;
+        const cmd = document.getElementById('mcp-input-cmd').value.trim();
+        const argsStr = document.getElementById('mcp-input-args').value.trim();
+
+        if (!name) { alert('请输入 Server 名称'); return; }
+
+        const payload = {
+            name: name,
+            transport: transport,
+            command: transport === 'stdio' ? cmd : null,
+            url: transport === 'sse' ? cmd : null,
+            args: argsStr ? argsStr.split(/\s+/) : [],
+            timeout: 30.0
+        };
 
         try {
-            let contentUrl = '/api/files/content?path=' + encodeURIComponent(filePath);
-            if (currentWorkspaceId) contentUrl += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
-            const resp = await fetch(contentUrl);
+            const resp = await fetch('/api/mcp/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
             if (!resp.ok) {
                 const err = await resp.json();
-                contentEl.textContent = '错误: ' + (err.detail || '加载失败');
-                return;
+                throw new Error(err.detail || '连接失败');
             }
-            const data = await resp.json();
-            contentEl.textContent = data.content;
-            if (data.truncated) truncatedEl.style.display = 'inline';
+            alert(`MCP Server '${name}' 连接成功！`);
+            closeAddMcpModal();
+            loadMcpServers();
         } catch (e) {
-            contentEl.textContent = '错误: ' + e.message;
+            alert('连接失败: ' + e.message);
         }
     }
 
-    function closePreview() {
-        document.getElementById('preview-modal').classList.remove('active');
-    }
-
-    function downloadFile(filePath) {
-        let url = '/api/files/download?path=' + encodeURIComponent(filePath);
-        if (currentWorkspaceId) url += '&workspace_id=' + encodeURIComponent(currentWorkspaceId);
-        window.open(url, '_blank');
-    }
-
-    // ── Agent 任务 ──
-
+    // ── 任务提交与执行 ──
     async function submitTask() {
         const input = document.getElementById('task-input');
         const btn = document.getElementById('submit-btn');
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
-        const hint = document.getElementById('new-file-hint');
-        const lockStatus = document.getElementById('lock-status');
-        const lockText = document.getElementById('lock-status-text');
-
         const task = input.value.trim();
-        if (!task) { input.focus(); return; }
+        if (!task) return;
 
         btn.disabled = true;
         loading.classList.add('active');
         results.style.display = 'none';
-        hint.style.display = 'none';
-        lockStatus.style.display = 'none';
+
+        // 模拟/检测 Skill 匹配
+        try {
+            const matchResp = await fetch('/api/agent-skills/match', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task: task })
+            });
+            const matchData = await matchResp.json();
+            if (matchData.matched) {
+                const banner = document.getElementById('active-skill-display');
+                document.getElementById('active-skill-name').textContent = matchData.skill_name;
+                banner.style.display = 'flex';
+            }
+        } catch (e) {}
 
         try {
             const resp = await fetch('/api/chat', {
@@ -715,240 +871,93 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task, workspace_id: currentWorkspaceId }),
             });
+
             if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || '请求失败');
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.detail || errData.error || `HTTP ${resp.status}`);
             }
+
             const data = await resp.json();
-
-            // Handle queued status
-            if (data.mode === 'queued') {
-                lockStatus.style.display = 'block';
-                lockText.textContent = `任务已排队（位置 #${data.metrics?.queue_position || 1}）。另一个任务正在执行中，请等待...`;
-                loading.classList.remove('active');
-                btn.disabled = false;
-                return;
-            }
-
             renderResults(data);
             refreshFileList();
-
-            // 检查是否有 write_file 操作，提示新文件
-            const writeOps = data.tool_results?.filter(tr => tr.name === 'write_file' && tr.success);
-            if (writeOps && writeOps.length > 0) {
-                hint.textContent = `Agent 已生成/修改 ${writeOps.length} 个文件，可在右侧 Workspace 面板中查看和下载。`;
-                hint.style.display = 'block';
-            }
-        } catch (e) {
-            alert('错误: ' + e.message);
+            refreshFileTree();
+        } catch (err) {
+            alert('任务执行出错: ' + err.message);
         } finally {
             btn.disabled = false;
             loading.classList.remove('active');
         }
     }
 
+    // ── 渲染结果 ──
     function renderResults(data) {
-        const results = document.getElementById('results');
-        const stepsList = document.getElementById('steps-list');
-        const answerBox = document.getElementById('answer-box');
-        const diffSection = document.getElementById('diff-section');
-        const diffContent = document.getElementById('diff-content');
         const warnContainer = document.getElementById('warn-container');
-        const securityContainer = document.getElementById('security-container');
+        const secContainer = document.getElementById('security-container');
         const testContainer = document.getElementById('test-result-container');
-        const evidenceSection = document.getElementById('evidence-section');
-        const evidenceConf = document.getElementById('evidence-confidence');
-        const evidenceList = document.getElementById('evidence-list');
+        const stepsList = document.getElementById('steps-list');
+        const diffContent = document.getElementById('diff-content');
+        const diffSection = document.getElementById('diff-section');
+        const answerBox = document.getElementById('answer-box');
+        const results = document.getElementById('results');
+
+        warnContainer.innerHTML = '';
+        secContainer.innerHTML = '';
+        testContainer.innerHTML = '';
+        stepsList.innerHTML = '';
+
+        // Mode badge
         const modeBadge = document.getElementById('mode-badge');
-        const traceSection = document.getElementById('trace-section');
-        const traceList = document.getElementById('trace-list');
-        const toolsSection = document.getElementById('tools-section');
-        const toolsList = document.getElementById('tools-list');
+        modeBadge.textContent = data.mode || 'react';
+        modeBadge.className = 'mode-badge mode-' + (data.mode || 'react');
+
+        // Render steps
+        if (data.steps && data.steps.length > 0) {
+            stepsList.innerHTML = data.steps.map(s => `
+                <div class="step-item">
+                    <div><span class="step-id">Step ${s.step_id}</span></div>
+                    ${s.thought ? `<div class="step-thought">${escapeHtml(s.thought)}</div>` : ''}
+                    ${s.action ? `<div class="step-action">${escapeHtml(s.action)}</div>` : ''}
+                    ${s.observation ? `<div class="step-observation">${escapeHtml(s.observation)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        // Render metrics
         const metricsSection = document.getElementById('metrics-section');
         const metricsDisplay = document.getElementById('metrics-display');
-        warnContainer.innerHTML = '';
-        securityContainer.innerHTML = '';
-        testContainer.innerHTML = '';
-        evidenceSection.style.display = 'none';
-        traceSection.style.display = 'none';
-        toolsSection.style.display = 'none';
-        metricsSection.style.display = 'none';
-
-        // 渲染步骤
-        stepsList.innerHTML = '';
-        if (data.steps && data.steps.length > 0) {
-            for (const step of data.steps) {
-                const item = document.createElement('div');
-                item.className = 'step-item';
-                const badge = step.success
-                    ? '<span class="step-badge success">OK</span>'
-                    : '<span class="step-badge fail">FAIL</span>';
-                let html = `<span class="step-id">Step ${step.step_id}</span> ${badge}`;
-                if (step.thought) {
-                    html += `<div class="step-thought">${escapeHtml(step.thought)}</div>`;
-                }
-                html += `<div class="step-action">${escapeHtml(step.tool_name)}(${escapeHtml(JSON.stringify(step.tool_args))})</div>`;
-                html += `<div class="step-observation">${escapeHtml(step.observation)}</div>`;
-                item.innerHTML = html;
-                stepsList.appendChild(item);
-            }
-        } else {
-            stepsList.innerHTML = '<div class="step-item">无工具调用（直接回答）</div>';
-        }
-
-        // 渲染 Security Warnings
-        if (data.security_warnings && data.security_warnings.length > 0) {
-            for (const w of data.security_warnings) {
-                const card = document.createElement('div');
-                card.className = 'security-card';
-                card.innerHTML = `
-                    <div class="security-card-header">
-                        <span class="security-badge">BLOCKED</span>
-                        <span class="security-type">${escapeHtml(w.risk_type || 'unknown')}</span>
-                    </div>
-                    <div class="security-reason">${escapeHtml(w.reason || '')}</div>
-                `;
-                securityContainer.appendChild(card);
-            }
-        }
-
-        // 渲染 Evidence & Confidence (D18)
-        if (data.evidence && data.evidence.length > 0) {
-            evidenceSection.style.display = 'block';
-            // Confidence badge
-            const conf = data.confidence || 0;
-            const confPct = (conf * 100).toFixed(0);
-            const confClass = conf >= 0.7 ? 'high' : conf >= 0.4 ? 'mid' : 'low';
-            evidenceConf.innerHTML = `Confidence: <span class="confidence-badge confidence-${confClass}">${confPct}%</span>`;
-            // Claims with evidence
-            evidenceList.innerHTML = '';
-            for (const claim of data.evidence) {
-                const card = document.createElement('div');
-                card.className = 'evidence-card';
-                let html = `<div class="evidence-claim">${escapeHtml(claim.claim_text)}</div>`;
-                for (const ev of (claim.evidence || [])) {
-                    html += `<div class="evidence-item">
-                        <span class="evidence-file" onclick="previewFile('${escapeJs(ev.file)}')">${escapeHtml(ev.file)}</span>
-                        <span class="evidence-symbol">${escapeHtml(ev.symbol)}()</span>
-                        <span class="evidence-lines">L${ev.line_start}-L${ev.line_end}</span>
-                    </div>`;
-                }
-                card.innerHTML = html;
-                evidenceList.appendChild(card);
-            }
-        } else {
-            evidenceSection.style.display = 'none';
-        }
-
-        // D23: Render Mode Badge
-        if (data.mode) {
-            const badgeClass = 'mode-' + data.mode;
-            modeBadge.innerHTML = `<span class="mode-badge ${badgeClass}">${escapeHtml(data.mode)}</span>`;
-        } else {
-            modeBadge.innerHTML = '';
-        }
-
-        // D23: Render Execution Trace
-        if (data.execution_trace && data.execution_trace.length > 0) {
-            traceSection.style.display = 'block';
-            traceList.innerHTML = '';
-            for (const step of data.execution_trace) {
-                const item = document.createElement('div');
-                item.className = 'step-item';
-                const badge = step.success
-                    ? '<span class="step-badge success">OK</span>'
-                    : '<span class="step-badge fail">FAIL</span>';
-                let html = `<span class="step-id">Step ${step.step_id}</span> ${badge}`;
-                if (step.tool) {
-                    html += `<div class="step-action">${escapeHtml(step.tool)}(${escapeHtml(step.input)})</div>`;
-                }
-                if (step.output) {
-                    html += `<div class="step-observation">${escapeHtml(step.output)}</div>`;
-                }
-                item.innerHTML = html;
-                traceList.appendChild(item);
-            }
-        }
-
-        // D23: Render Tools Used
-        if (data.tools_used && data.tools_used.length > 0) {
-            toolsSection.style.display = 'block';
-            toolsList.innerHTML = '';
-            for (const tool of data.tools_used) {
-                const tag = document.createElement('span');
-                tag.className = 'tool-tag';
-                tag.textContent = tool;
-                toolsList.appendChild(tag);
-            }
-        }
-
-        // D23: Render Metrics
+        metricsDisplay.innerHTML = '';
         if (data.metrics && Object.keys(data.metrics).length > 0) {
-            metricsSection.style.display = 'block';
-            metricsDisplay.innerHTML = '';
             const m = data.metrics;
-            const cards = [
-                { label: 'Status', value: m.task_success ? 'PASS' : (m.security_block ? 'BLOCKED' : 'RUN'), cls: m.task_success ? 'success' : (m.security_block ? 'block' : '') },
-                { label: 'Tool Calls', value: m.tool_calls, cls: '' },
-                { label: 'Duration', value: (m.duration_ms / 1000).toFixed(1) + 's', cls: '' },
-            ];
-            if (m.test_pass !== undefined) {
-                cards.push({ label: 'Tests', value: m.test_pass ? 'PASS' : 'FAIL', cls: m.test_pass ? 'success' : 'fail' });
-            }
-            if (m.evidence_count !== undefined && m.evidence_count > 0) {
-                cards.push({ label: 'Evidence', value: m.evidence_count, cls: '' });
-            }
-            if (m.security_block) {
-                cards.push({ label: 'Security', value: 'BLOCKED', cls: 'block' });
-            }
-            for (const c of cards) {
-                const card = document.createElement('div');
-                card.className = 'metric-card ' + c.cls;
-                card.innerHTML = `<div class="metric-value">${escapeHtml(String(c.value))}</div><div class="metric-label">${escapeHtml(c.label)}</div>`;
-                metricsDisplay.appendChild(card);
-            }
+            metricsDisplay.innerHTML = `
+                <div class="metric-card success"><div class="metric-value">${m.tool_calls || data.tool_calls_count || 0}</div><div class="metric-label">工具调用</div></div>
+                <div class="metric-card"><div class="metric-value">${m.steps || (data.steps ? data.steps.length : 0)}</div><div class="metric-label">执行步数</div></div>
+                <div class="metric-card"><div class="metric-value">${m.duration_ms ? (m.duration_ms/1000).toFixed(1) + 's' : '-'}</div><div class="metric-label">总耗时</div></div>
+            `;
+            metricsSection.style.display = 'block';
         }
 
-        // 渲染 Test Result Card
+        // Render Test Result
         const testResult = data.tool_results?.find(tr => tr.name === 'run_tests' && tr.success);
         if (testResult) {
             try {
-                const testOutput = JSON.parse(testResult.output);
-                const card = document.createElement('div');
-                card.className = 'test-card';
-                const badgeClass = testOutput.success ? 'pass' : 'fail';
-                const badgeText = testOutput.success ? 'PASSED' : 'FAILED';
-                card.innerHTML = `
-                    <div class="test-card-header">
-                        <span class="test-card-title">Test Result</span>
-                        <span class="test-card-badge ${badgeClass}">${badgeText}</span>
+                const tOut = JSON.parse(testResult.output);
+                testContainer.innerHTML = `
+                    <div class="test-card">
+                        <div class="test-card-header">
+                            <span class="test-card-title">Test Result</span>
+                            <span class="test-card-badge ${tOut.success ? 'pass' : 'fail'}">${tOut.success ? 'PASSED' : 'FAILED'}</span>
+                        </div>
+                        <div class="test-card-stats">
+                            <span class="test-stat"><span class="dot green"></span> ${tOut.passed} passed</span>
+                            <span class="test-stat"><span class="dot red"></span> ${tOut.failed} failed</span>
+                        </div>
+                        <div class="test-card-output">${escapeHtml(tOut.stdout || tOut.stderr || '')}</div>
                     </div>
-                    <div class="test-card-stats">
-                        <span class="test-stat"><span class="dot green"></span> ${testOutput.passed} passed</span>
-                        <span class="test-stat"><span class="dot red"></span> ${testOutput.failed} failed</span>
-                    </div>
-                    <div class="test-card-output">${escapeHtml(testOutput.stdout || testOutput.stderr || '')}</div>
                 `;
-                testContainer.appendChild(card);
-            } catch (e) {
-                // JSON 解析失败，忽略
-            }
+            } catch (e) {}
         }
 
-        // 检查 git_diff 错误
-        const gitDiffError = data.tool_results?.find(tr =>
-            tr.name === 'git_diff' && tr.output && tr.output.includes('不是 git 仓库')
-        );
-        if (gitDiffError) {
-            warnContainer.innerHTML = `
-                <div class="warn-box">
-                    当前 workspace 尚未初始化 Git，diff 不可用。可在 workspace 下执行：
-                    <code>git init && git add . && git commit -m "init"</code>
-                </div>
-            `;
-        }
-
-        // 渲染 git diff
+        // Diff
         const diffResult = data.tool_results?.find(tr => tr.name === 'git_diff' && tr.success);
         if (diffResult && !diffResult.output.startsWith('无变更') && !diffResult.output.startsWith('错误')) {
             diffContent.textContent = diffResult.output;
@@ -957,88 +966,128 @@
             diffSection.style.display = 'none';
         }
 
-        // 渲染最终回答 (Markdown)
-        const answerText = data.answer || '无回答';
-        answerBox.innerHTML = marked.parse(answerText);
-        answerBox.className = data.answer ? 'answer-box has-content' : 'answer-box';
+        // Answer
+        answerBox.innerHTML = marked.parse(data.answer || '无回答');
         results.style.display = 'block';
     }
 
-    function escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
-    function escapeJs(str) {
-        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    }
-
-    // Ctrl+Enter 提交
-    document.getElementById('task-input').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            submitTask();
+    // ── Workspace 文件管理 ──
+    async function refreshFileList() {
+        const listEl = document.getElementById('ws-file-list');
+        try {
+            let url = '/api/files';
+            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(url);
+            const data = await resp.json();
+            const files = data.files || [];
+            if (files.length === 0) {
+                listEl.innerHTML = '<div style="color:#484f58;font-size:12px;">工作区为空</div>';
+                return;
+            }
+            listEl.innerHTML = files.map(f => `
+                <div class="ws-file-item" onclick="previewFile('${escapeJs(f.name)}')">
+                    <span class="ws-file-name">📄 ${escapeHtml(f.name)}</span>
+                    <span class="ws-file-size">${(f.size / 1024).toFixed(1)} KB</span>
+                </div>
+            `).join('');
+        } catch (e) {
+            listEl.innerHTML = `<div style="color:#da3633;font-size:12px;">加载失败</div>`;
         }
-    });
+    }
 
-    // ESC 关闭预览
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closePreview();
-    });
+    async function refreshFileTree() {
+        const treeEl = document.getElementById('file-tree');
+        try {
+            let url = '/api/workspace/index';
+            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(url);
+            const data = await resp.json();
+            renderFileTree(data.tree, treeEl);
+        } catch (e) {}
+    }
 
-    // 点击模态框背景关闭
-    document.getElementById('preview-modal').addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closePreview();
-    });
+    function renderFileTree(tree, container, depth = 0, parentPath = '') {
+        container.innerHTML = '';
+        if (!tree || typeof tree !== 'object') return;
+        const files = tree.files || [];
+        for (const fname of files) {
+            const item = document.createElement('div');
+            item.className = 'tree-item tree-file default';
+            item.style.paddingLeft = (depth * 14) + 'px';
+            item.textContent = fname;
+            const fullPath = parentPath ? `${parentPath}/${fname}` : fname;
+            item.onclick = () => previewFile(fullPath);
+            container.appendChild(item);
+        }
+        const dirs = tree.dirs || {};
+        for (const [dirName, subNode] of Object.entries(dirs)) {
+            const dirItem = document.createElement('div');
+            dirItem.className = 'tree-item tree-dir';
+            dirItem.style.paddingLeft = (depth * 14) + 'px';
+            dirItem.textContent = dirName;
+            container.appendChild(dirItem);
+            const childBox = document.createElement('div');
+            childBox.className = 'tree-indent';
+            renderFileTree(subNode, childBox, depth + 1, parentPath ? `${parentPath}/${dirName}` : dirName);
+            container.appendChild(childBox);
+        }
+    }
 
-    // ── 文件上传 ──
+    async function previewFile(filename) {
+        try {
+            let url = '/api/files/' + encodeURIComponent(filename);
+            if (currentWorkspaceId) url += '?workspace_id=' + encodeURIComponent(currentWorkspaceId);
+            const resp = await fetch(url);
+            const data = await resp.json();
+            document.getElementById('preview-filename').textContent = filename;
+            document.getElementById('preview-content').textContent = data.content || '';
+            document.getElementById('preview-download').href = url + '?download=true';
+            document.getElementById('preview-modal').classList.add('active');
+        } catch (e) {
+            alert('预览失败: ' + e.message);
+        }
+    }
+
+    function closePreview() {
+        document.getElementById('preview-modal').classList.remove('active');
+    }
 
     async function handleUpload(input) {
         const file = input.files[0];
         if (!file) return;
-
         const statusEl = document.getElementById('upload-status');
-        statusEl.textContent = '上传中...';
-        statusEl.style.color = '#8b949e';
-
+        statusEl.textContent = '上传解压中...';
         const formData = new FormData();
         formData.append('file', file);
-
         try {
-            const resp = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || '上传失败');
-            }
+            const resp = await fetch('/api/upload', { method: 'POST', body: formData });
             const data = await resp.json();
-
-            // 设置当前 workspace
             currentWorkspaceId = data.workspace_id;
-            document.getElementById('workspace-id-display').textContent = data.workspace_id;
-            document.getElementById('workspace-banner').style.display = 'block';
-
-            statusEl.textContent = `上传成功: ${data.file_count} 个文件`;
-            statusEl.style.color = '#3fb950';
-
-            // 刷新文件列表和文件树
+            statusEl.textContent = `上传成功 (${data.file_count} 个文件)`;
             refreshFileList();
             refreshFileTree();
         } catch (e) {
-            statusEl.textContent = '错误: ' + e.message;
-            statusEl.style.color = '#da3633';
+            statusEl.textContent = '上传失败: ' + e.message;
         }
-
-        // 清空 input 以便重复上传同一文件
         input.value = '';
     }
 
-    // 页面加载时获取文件列表
-    refreshFileList();
-    refreshFileTree();
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+    function escapeJs(str) {
+        return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    // 初始化加载
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshFileList();
+        refreshFileTree();
+        loadAgentSkills();
+        loadMcpServers();
+    });
     </script>
 </body>
 </html>

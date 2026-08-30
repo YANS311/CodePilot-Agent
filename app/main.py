@@ -22,7 +22,18 @@ async def lifespan(app: FastAPI):
     logger.info("LLM base_url: %s", settings.llm_base_url)
     logger.info("LLM model:    %s", settings.llm_model)
     logger.info("LLM api_key:  %s...", settings.llm_api_key[:8] if settings.llm_api_key else "(empty)")
+    
+    # 启动时自动发现并加载根目录 mcp.json
+    mcp_file = Path("mcp.json")
+    if mcp_file.exists():
+        try:
+            from app.mcp.registry import mcp_registry
+            mcp_registry.load_from_json(mcp_file)
+            logger.info("Auto-indexed %d MCP server(s) from %s", len(mcp_registry._configs), mcp_file)
+        except Exception as exc:
+            logger.warning("Failed to load mcp.json: %s", exc)
     yield
+
 
 
 app = FastAPI(

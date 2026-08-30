@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -94,6 +95,13 @@ async def list_skills() -> SkillsTierResponse:
 @router.get("/api/mcp/servers")
 async def list_mcp_servers() -> Dict[str, Any]:
     """获取当前已注册的 MCP Server 及其连接状态。"""
+    mcp_path = Path(__file__).resolve().parent.parent.parent / "mcp.json"
+    if not mcp_registry._configs and mcp_path.exists():
+        try:
+            mcp_registry.load_from_json(mcp_path)
+        except Exception as exc:
+            logger.debug("Auto loading mcp.json fallback: %s", exc)
+
     servers_info = []
     for name, cfg in mcp_registry._configs.items():
         client = mcp_registry.get_client(name)
@@ -130,3 +138,63 @@ async def connect_mcp_server(config: MCPServerConfig) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception("Failed to connect MCP server '%s'", config.name)
         raise HTTPException(status_code=400, detail=f"连接 MCP Server 失败: {exc}")
+
+
+@router.delete("/api/mcp/servers/{name}")
+async def disconnect_mcp_server(name: str) -> Dict[str, Any]:
+    """断开并注销指定的 MCP Server。"""
+    if name not in mcp_registry._configs:
+        raise HTTPException(status_code=404, detail=f"MCP Server '{name}' not found")
+    mcp_registry.unregister_server(name)
+    return {"status": "unregistered", "server": name}
+
+
+# ── Agent Skills (3-Level Progressive Disclosure) ──
+import dataclasses
+from app.skills.manager import skill_manager
+
+
+@router.get("/api/agent-skills")
+async def list_agent_skills() -> Dict[str, Any]:
+    """获取所有 Agent Skills 元数据 (Level 1 Progressive Disclosure)。"""
+    metas = skill_manager.list_metadata()
+    return {
+        "count": len(metas),
+        "skills": [dataclasses.asdict(m) for m in metas],
+    }
+
+
+@router.get("/api/agent-skills/{name}")
+async def get_agent_skill_detail(name: str) -> Dict[str, Any]:
+    """获取单个 Agent Skill 的 Level 2 SOP 指令与 Level 3 辅助资源。"""
+    skill = skill_manager.get_skill(name)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    return {
+        "name": skill.name,
+        "metadata": dataclasses.asdict(skill.metadata),
+        "instruction_markdown": skill.instructions,
+        "scripts": {k: str(v) for k, v in skill.scripts.items()},
+        "references": {k: str(v) for k, v in skill.references.items()},
+    }
+
+
+@router.post("/api/agent-skills/match")
+async def match_agent_skill(payload: Dict[str, str]) -> Dict[str, Any]:
+    """根据任务意图匹配最适用的 Agent Skill。"""
+    task = payload.get("task", "")
+    matched = skill_manager.match_and_load_for_task(task)
+    if matched:
+        return {
+            "matched": True,
+            "skill_name": matched.name,
+            "metadata": dataclasses.asdict(matched.metadata),
+            "instruction_snippet": (
+                matched.instructions[:300] + "..."
+                if len(matched.instructions) > 300
+                else matched.instructions
+            ),
+        }
+    return {"matched": False, "skill_name": None}
+
+
