@@ -37,7 +37,9 @@ class WorkspaceTool(BaseTool):
         """
         ws = self.resolve_workspace(workspace_root)
         target = (ws / relative_path).resolve()
-        if not str(target).startswith(str(ws)):
+        try:
+            target.relative_to(ws)
+        except ValueError:
             raise ValueError(f"路径超出 workspace 范围 — {relative_path}")
         return target
 
