@@ -66,6 +66,14 @@ class RunTestsTool(WorkspaceTool):
         output.update(extra)
         return json.dumps(output, ensure_ascii=False)
 
+    def is_output_successful(self, output: str) -> bool:
+        """Use the JSON payload's test outcome as the tool-call outcome."""
+        try:
+            payload = json.loads(output)
+        except (TypeError, json.JSONDecodeError):
+            return False
+        return isinstance(payload, dict) and payload.get("success") is True
+
     async def run(self, *, workspace_root: str, target: str = "", **_) -> str:
         ws = self.resolve_workspace(workspace_root)
         if not ws.exists():
