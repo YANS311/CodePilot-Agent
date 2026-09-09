@@ -164,7 +164,32 @@ class TestRunTestsRegistry:
         )
         assert result.success is True
         data = json.loads(result.output)
+        assert data["success"] is True
         assert data["passed"] >= 1
+
+    def test_registry_propagates_failed_test_outcome(self):
+        ws = Path(WORKSPACE)
+        test_file = ws / "test_registry_failure.py"
+        test_file.write_text(
+            "def test_fail():\n    assert False, 'intentional failure'\n",
+            encoding="utf-8",
+        )
+        try:
+            reg = ToolRegistry()
+            reg.register(RunTestsTool())
+            tc = ToolCall(
+                name="run_tests",
+                arguments={"target": test_file.name},
+            )
+
+            result = asyncio.run(reg.execute(tc, WORKSPACE))
+            data = json.loads(result.output)
+
+            assert data["success"] is False
+            assert result.success is False
+            assert data["failed"] >= 1
+        finally:
+            test_file.unlink(missing_ok=True)
 
     def test_run_tests_is_base_tool(self):
         from app.tools.base import BaseTool

@@ -183,7 +183,7 @@ class ToolRegistry:
             return ToolResult(
                 tool_call_id=tool_call.id,
                 name=tool.name,
-                success=True,
+                success=tool.is_output_successful(output),
                 output=output,
             )
         except Exception as exc:

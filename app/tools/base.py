@@ -29,6 +29,15 @@ class BaseTool(ABC):
         """
         ...
 
+    def is_output_successful(self, output: str) -> bool:
+        """Interpret whether a completed tool call achieved its domain goal.
+
+        Existing text-returning tools remain successful when run completes.
+        Tools with a structured result can override this hook so transport
+        completion is not confused with domain success.
+        """
+        return True
+
     def to_openai_schema(self) -> dict:
         """导出为 OpenAI function calling 格式的工具描述。"""
         return {

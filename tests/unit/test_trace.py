@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,49 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.agent.trace import ExecutionStepTrace, ExecutionTrace
+from app.agent.trace import (
+    TRACE_EVENT_SCHEMA_VERSION,
+    ExecutionStepTrace,
+    ExecutionTrace,
+    TraceEvent,
+)
+
+
+class TestTraceEventContract:
+    def test_serializes_required_harness_fields(self):
+        event = TraceEvent(
+            task_id="task-123",
+            step_id=3,
+            agent_action="tool_call",
+            tool_name="search_code",
+            tool_input={"query": "jwt"},
+            tool_output={"matches": 2},
+            execution_result="success",
+            duration_ms=12.5,
+        )
+
+        data = json.loads(event.to_json())
+
+        assert data["schema_version"] == TRACE_EVENT_SCHEMA_VERSION
+        assert data["task_id"] == "task-123"
+        assert data["step_id"] == 3
+        assert data["agent_action"] == "tool_call"
+        assert data["tool_name"] == "search_code"
+        assert data["tool_input"] == {"query": "jwt"}
+        assert data["tool_output"] == {"matches": 2}
+        assert data["execution_result"] == "success"
+        assert data["duration_ms"] == 12.5
+        assert datetime.fromisoformat(data["timestamp"]).utcoffset() is not None
+
+    def test_mutable_fields_are_isolated_per_event(self):
+        first = TraceEvent(task_id="task-1", step_id=1, agent_action="plan")
+        second = TraceEvent(task_id="task-2", step_id=1, agent_action="plan")
+
+        first.tool_input["query"] = "first"
+        first.metadata["source"] = "agent"
+
+        assert second.tool_input == {}
+        assert second.metadata == {}
 
 
 class TestExecutionTrace:

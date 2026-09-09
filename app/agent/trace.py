@@ -9,8 +9,46 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+TRACE_EVENT_SCHEMA_VERSION = "0.1"
+
+
+def _utc_timestamp() -> str:
+    """Return an ISO-8601 UTC timestamp suitable for JSON traces."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class TraceEvent:
+    """Draft event contract for the converged harness trace stream.
+
+    This model is additive in PR0. Existing ExecutionTrace and API output
+    remain unchanged until producers and consumers migrate in later PRs.
+    """
+
+    task_id: str
+    step_id: int
+    agent_action: str
+    timestamp: str = field(default_factory=_utc_timestamp)
+    tool_name: Optional[str] = None
+    tool_input: Dict[str, Any] = field(default_factory=dict)
+    tool_output: Any = None
+    execution_result: str = "unknown"
+    duration_ms: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    schema_version: str = TRACE_EVENT_SCHEMA_VERSION
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Export the versioned event as a JSON-serializable dictionary."""
+        return asdict(self)
+
+    def to_json(self) -> str:
+        """Export the versioned event as UTF-8 friendly JSON."""
+        return json.dumps(self.to_dict(), ensure_ascii=False)
 
 
 @dataclass

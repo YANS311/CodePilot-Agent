@@ -59,6 +59,7 @@ graph TD
 
 ### 2.2 Unified Tool System (Built-in + MCP)
 - **Polymorphic Contract**: All tools inherit from `BaseTool`, implementing `to_openai_schema()` and `run(workspace_root, **kwargs)`.
+- **Domain Success Semantics**: `ToolResult.success` represents the tool's domain outcome, not merely a completed Python call. `RunTestsTool` therefore propagates the JSON test result into the registry result.
 - **MCP Client Adapter**: Implements the Model Context Protocol (JSON-RPC 2.0 over `stdio`), dynamically discovering tools, converting JSON Schemas to OpenAI function schemas, and mounting seamlessly into `ToolRegistry`.
 - **Namespace & Failure Isolation**: Server crashes, malformed responses, and protocol timeouts are caught and reported as structured errors without crashing the main agent harness.
 
@@ -78,6 +79,7 @@ graph TD
 - **Quantitative Benchmark Metrics**: Task Success Rate (TSR), Pass@1, Tool Efficiency, Latency (ms), Tool Error Rate, and Error Taxonomy distribution.
 - **Multi-Layer Task Suite**: 30 synthetic benchmarks + 15 real-world repository tasks + 10 stress/recovery test cases.
 - **Deterministic Replay**: Recorded `ExecutionTrace` trajectories allow exact replay and step-level regression debugging.
+- **Trace Convergence Draft**: The additive, versioned `TraceEvent` contract defines stable task, step, timestamp, action, tool I/O, result, and latency fields for gradual producer and evaluator migration. See [`docs/trace_event.md`](docs/trace_event.md).
 
 ---
 
