@@ -30,6 +30,11 @@ async def lifespan(app: FastAPI):
             from app.mcp.registry import mcp_registry
             mcp_registry.load_from_json(mcp_file)
             logger.info("Auto-indexed %d MCP server(s) from %s", len(mcp_registry._configs), mcp_file)
+            try:
+                tools = await mcp_registry.connect_all()
+                logger.info("Connected MCP server(s) and discovered %d tool(s)", len(tools))
+            except Exception as exc:
+                logger.warning("Failed to connect MCP servers during startup: %s", exc)
         except Exception as exc:
             logger.warning("Failed to load mcp.json: %s", exc)
     yield

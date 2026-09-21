@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.api.upload import _resolve_workspace_id
 from app.core.llm_client import LLMClient
 from app.core.workspace_lock import get_lock_manager
+from app.mcp.registry import mcp_registry
 from app.output.formatter import format_output
 from app.tools.git_diff import GitDiffTool
 from app.tools.git_status import GitStatusTool
@@ -103,6 +104,7 @@ def _build_registry(index=None) -> ToolRegistry:
     registry.register(GitDiffTool())
     registry.register(GitStatusTool())
     registry.register(RunTestsTool())
+    registry.mount_mcp_registry(mcp_registry)
     return registry
 
 

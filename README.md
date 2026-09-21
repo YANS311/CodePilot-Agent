@@ -83,6 +83,31 @@ graph TD
 
 ---
 
+## MCP Runtime Integration
+
+CodePilot Agent seamlessly integrates the Model Context Protocol (MCP) into the agent's core ReAct loop, providing dynamic tool discovery, runtime mounting, and strict sandbox enforcement.
+
+### End-to-End Invocation Chain (配置 → Registry → Tool → Agent)
+
+```mermaid
+flowchart LR
+    Config["1. Config<br/>(mcp.json / API)"] -->|load_from_json / connect_server| Registry["2. MCPRegistry<br/>(Handshake & tools/list)"]
+    Registry -->|wrap definition| MCPTool["3. MCPTool Adapter<br/>(BaseTool + Path Guard)"]
+    MCPTool -->|mount_mcp_registry| ToolRegistry["4. ToolRegistry<br/>(Native + MCP Tools)"]
+    ToolRegistry -->|get_schemas()| Agent["5. ReActAgent<br/>(OpenAI Function Calling)"]
+    Agent -->|execute(tool_call)| Security["6. Security Boundary<br/>(PermissionPolicy + Guardrail)"]
+    Security -->|run()| RemoteServer["7. External MCP Server<br/>(stdio / SSE)"]
+```
+
+- **1. 配置 (Configuration)**: MCP Server configurations are defined in `mcp.json` (stdio / SSE) or dynamically registered via `POST /api/mcp/connect`.
+- **2. 注册中心 (Registry)**: `MCPRegistry` manages client transports, initiates JSON-RPC 2.0 handshakes (`initialize`), and queries available tools (`tools/list`).
+- **3. 工具适配 (Tool Adapter)**: Remote tool definitions are wrapped as `MCPTool` instances (inheriting `BaseTool`) with built-in path traversal guards (`_check_path_security`) and timeout protection.
+- **4. 统一挂载 (Mounting)**: `ToolRegistry.mount_mcp_registry()` injects all active MCP tools alongside native tools in `app/api/chat.py`.
+- **5. Agent 消费 (Agent Execution)**: `ReActAgent` fetches unified OpenAI Function Calling schemas via `ToolRegistry.get_schemas()` and executes calls during the ReAct loop.
+- **6. 安全拦截 (Security Enforcement)**: Every MCP tool invocation remains strictly guarded by `PermissionPolicy`, `ToolGuardrail`, and parameter boundaries.
+
+---
+
 ## 3. Quick Start
 
 ### 3.1 Setup Environment
