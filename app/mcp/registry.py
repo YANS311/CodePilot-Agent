@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import asyncio
+from enum import Enum
 import logging
 from pathlib import Path
+import time
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -28,6 +30,26 @@ _PATH_PARAM_KEYS = frozenset({
 
 # 敏感文件/目录阻止匹配
 _BLOCKED_NAMES = frozenset({".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"})
+
+
+class ServerStatus(str, Enum):
+    """MCP Server 运行时生命周期状态枚举。"""
+
+    CONNECTED = "connected"
+    CONNECTING = "connecting"
+    FAILED = "failed"
+    DISCONNECTED = "disconnected"
+
+
+class ServerRuntimeState(BaseModel):
+    """MCP Server 运行时生命周期状态模型。"""
+
+    name: str
+    transport: str = "stdio"
+    status: ServerStatus = ServerStatus.DISCONNECTED
+    last_error: Optional[str] = None
+    tool_count: int = 0
+    last_connected_at: Optional[float] = None
 
 
 class MCPServerConfig(BaseModel):
@@ -189,6 +211,7 @@ class MCPRegistry:
         self._configs: Dict[str, MCPServerConfig] = {}
         self._clients: Dict[str, MCPClient] = {}
         self._tools: Dict[str, MCPTool] = {}
+        self._states: Dict[str, ServerRuntimeState] = {}
 
     def register_server(self, config: MCPServerConfig) -> MCPClient:
         """注册并创建 MCPClient（未连接状态）。"""
@@ -219,6 +242,11 @@ class MCPRegistry:
 
         client = MCPClient(transport=transport, client_name="CodePilot-Agent")
         self._clients[config.name] = client
+        self._states[config.name] = ServerRuntimeState(
+            name=config.name,
+            transport=config.transport,
+            status=ServerStatus.DISCONNECTED,
+        )
         return client
 
     def register_client(self, name: str, client: MCPClient, config: Optional[MCPServerConfig] = None) -> None:
@@ -228,8 +256,18 @@ class MCPRegistry:
         self._clients[name] = client
         if config:
             self._configs[name] = config
+            self._states[name] = ServerRuntimeState(
+                name=name,
+                transport=config.transport,
+                status=ServerStatus.DISCONNECTED,
+            )
         else:
             self._configs[name] = MCPServerConfig(name=name, transport="stdio", command="custom")
+            self._states[name] = ServerRuntimeState(
+                name=name,
+                transport="stdio",
+                status=ServerStatus.DISCONNECTED,
+            )
 
     def load_from_dict(self, data: Dict[str, Any]) -> List[str]:
         """从配置字典中批量加载 MCP Server 配置。
@@ -263,6 +301,7 @@ class MCPRegistry:
         """注销 MCP Server。"""
         self._configs.pop(name, None)
         self._clients.pop(name, None)
+        self._states.pop(name, None)
         # 移除该 server 关联的 tools
         self._tools = {k: t for k, t in self._tools.items() if t.server_name != name}
 
@@ -273,6 +312,14 @@ class MCPRegistry:
     def get_tool(self, name: str) -> Optional[MCPTool]:
         """获取已加载的 MCPTool。"""
         return self._tools.get(name)
+
+    def get_server_state(self, name: str) -> Optional[ServerRuntimeState]:
+        """获取指定 MCP Server 的运行时状态。"""
+        return self._states.get(name)
+
+    def list_server_states(self) -> List[ServerRuntimeState]:
+        """返回所有已注册 MCP Server 的运行时状态列表。"""
+        return list(self._states.values())
 
     def list_servers(self) -> List[str]:
         """返回当前所有已注册的 MCP Server 名称。"""
@@ -292,26 +339,47 @@ class MCPRegistry:
         timeout = cfg.timeout if cfg else 30.0
         namespace_tools = cfg.namespace_tools if cfg else False
 
-        await client.connect()
-        tool_defs = await client.list_tools()
+        if name in self._states:
+            self._states[name].status = ServerStatus.CONNECTING
 
-        created_tools: List[MCPTool] = []
-        for t_def in tool_defs:
-            tool_name = f"mcp_{name}_{t_def.name}" if namespace_tools else t_def.name
-            mcp_tool = MCPTool(
-                name=tool_name,
-                description=t_def.description,
-                parameters=t_def.inputSchema,
-                client=client,
-                server_name=name,
-                original_name=t_def.name,
-                timeout=timeout,
+        try:
+            await client.connect()
+            tool_defs = await client.list_tools()
+
+            created_tools: List[MCPTool] = []
+            for t_def in tool_defs:
+                tool_name = f"mcp_{name}_{t_def.name}" if namespace_tools else t_def.name
+                mcp_tool = MCPTool(
+                    name=tool_name,
+                    description=t_def.description,
+                    parameters=t_def.inputSchema,
+                    client=client,
+                    server_name=name,
+                    original_name=t_def.name,
+                    timeout=timeout,
+                )
+                self._tools[tool_name] = mcp_tool
+                created_tools.append(mcp_tool)
+                logger.info("Loaded MCP tool: %s from server '%s'", tool_name, name)
+
+            self._states[name] = ServerRuntimeState(
+                name=name,
+                transport=cfg.transport if cfg else "stdio",
+                status=ServerStatus.CONNECTED,
+                last_error=None,
+                tool_count=len(created_tools),
+                last_connected_at=time.time(),
             )
-            self._tools[tool_name] = mcp_tool
-            created_tools.append(mcp_tool)
-            logger.info("Loaded MCP tool: %s from server '%s'", tool_name, name)
-
-        return created_tools
+            return created_tools
+        except Exception as exc:
+            self._states[name] = ServerRuntimeState(
+                name=name,
+                transport=cfg.transport if cfg else "stdio",
+                status=ServerStatus.FAILED,
+                last_error=str(exc),
+                tool_count=0,
+            )
+            raise
 
     async def connect_all(self) -> List[MCPTool]:
         """连接所有已注册的 MCP Server 并加载全部工具。"""
@@ -323,6 +391,23 @@ class MCPRegistry:
             except Exception as exc:
                 logger.error("Failed to connect to MCP server '%s': %s", name, exc)
         return all_tools
+
+    async def startup_restore(self, config_store: Optional[Any] = None) -> List[MCPTool]:
+        """从持久化配置恢复 MCP Server 并建立连接。单个 Server 失败标记为 failed，不阻断其他 Server。"""
+        if config_store is None:
+            from app.mcp.storage import mcp_config_store
+            config_store = mcp_config_store
+
+        persisted_servers = config_store.load_servers()
+        for name, cfg in persisted_servers.items():
+            if name not in self._configs:
+                try:
+                    self.register_server(cfg)
+                    logger.info("Restored persistent MCP server '%s'", name)
+                except Exception as exc:
+                    logger.warning("Failed to restore persistent MCP server '%s': %s", name, exc)
+
+        return await self.connect_all()
 
     def mount_to_tool_registry(self, tool_registry: Any) -> int:
         """将所有已加载的 MCPTool 动态注入到 CodePilot 的 ToolRegistry 中。
@@ -353,6 +438,9 @@ class MCPRegistry:
         client = self._clients.get(name)
         if client:
             await client.close()
+        if name in self._states:
+            self._states[name].status = ServerStatus.DISCONNECTED
+            self._states[name].tool_count = 0
         # 清除该 server 的 tools
         self._tools = {k: t for k, t in self._tools.items() if t.server_name != name}
 
@@ -363,6 +451,9 @@ class MCPRegistry:
                 await client.close()
             except Exception as exc:
                 logger.debug("Error disconnecting MCP client '%s': %s", name, exc)
+            if name in self._states:
+                self._states[name].status = ServerStatus.DISCONNECTED
+                self._states[name].tool_count = 0
         self._tools.clear()
 
     def get_tools_metadata(self) -> List[Dict[str, Any]]:
