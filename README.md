@@ -69,6 +69,14 @@ graph TD
   - **Level 1 (Metadata Discovery)**: System prompt indexes only names and summaries (<100 tokens).
   - **Level 2 (Instruction Loading)**: Full `SKILL.md` procedural guidelines are loaded on-demand when relevant task intent is matched.
   - **Level 3 (Resource Loading)**: Associated reference manuals, scripts, and examples are fetched strictly on explicit need.
+- **Built-in Skills**:
+  - `repository-explorer`: 该 Skill 使用标准化 SOP 帮助 Agent 分析未知代码仓库（项目全景、技术栈、架构分层、启动入口与 Evidence-based 调用链）。
+  - `bug-fix`: Reproducible software defect localization and verification.
+  - `code-review`: Code quality, architecture, and maintainability inspection.
+  - `test-debugging`: Automated test triage and failure root-cause analysis.
+  - `security-audit`: Static security vulnerability and secret leak scanner.
+  - `api-spec-validator`: FastAPI/REST route, status code, and schema validation.
+  - `git-workflow`: Git branch, diff review, and Conventional Commits helper.
 
 ### 2.4 Sandboxed Execution & Security Boundaries
 - **Deterministic Permission Policy**: Hard enforcement of `READ`, `WRITE`, `EXECUTE`, `NETWORK`, and `GIT_MUTATE` actions in `ToolRegistry` (Prompt Guardrail != Security Boundary).
