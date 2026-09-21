@@ -19,6 +19,7 @@ from app.security.tool_guardrail import ToolGuardrail
 from app.skills.manager import SkillManager, skill_manager
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.models.tool import AgentStep, ToolCall, ToolResult
+from app.tools.discovery import ToolDiscovery, default_tool_discovery
 from app.tools.registry import ToolRegistry
 from app.workspace.indexer import IndexBuilder, WorkspaceIndex
 from app.workspace.index_cache import get_index_cache
@@ -142,6 +143,7 @@ class ReActAgent:
         verification_policy: VerificationPolicy | None = None,
         permission_policy: PermissionPolicy | None = None,
         skill_manager_instance: SkillManager | None = None,
+        tool_discovery: ToolDiscovery | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -153,6 +155,7 @@ class ReActAgent:
         self._guardrail = ToolGuardrail()
         self._permission_policy = permission_policy or PermissionPolicy.standard_coding()
         self._skill_manager = skill_manager_instance or skill_manager
+        self._discovery = tool_discovery or default_tool_discovery
         self._index: Optional[WorkspaceIndex] = None
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
@@ -190,6 +193,7 @@ class ReActAgent:
         matched_skill = self._skill_manager.match_and_load_for_task(task)
         active_skill_name = matched_skill.name if matched_skill else None
         skill_prompt_section = matched_skill.to_prompt_instruction() if matched_skill else ""
+        skill_tags = matched_skill.metadata.tags if matched_skill else []
 
         # 初始化结构化 Execution Trace
         trace = ExecutionTrace(task=task, active_skill=active_skill_name)
@@ -206,7 +210,22 @@ class ReActAgent:
             {"role": "user", "content": task},
         ]
 
-        tools_schema = self._registry.get_schemas()
+        # Progressive Tool Discovery: 基于任务意图与 Skill 动态检索 Top-K 工具，避免 Token 膨胀
+        candidate_tools = self._registry.list_tools()
+        selected_tools, selection_meta = await self._discovery.select_tools_detailed(
+            task=task,
+            tools=candidate_tools,
+            active_skill=active_skill_name,
+            skill_tags=skill_tags,
+        )
+        tools_schema = [t.to_openai_schema() for t in selected_tools]
+        trace.record_tool_selection(
+            candidate_count=selection_meta.get("candidate_count", len(candidate_tools)),
+            selected_tools=selection_meta.get("selected_tools", [t.name for t in selected_tools]),
+            scores=selection_meta.get("scores", {}),
+            reason=selection_meta.get("reason", ""),
+        )
+
         result = await self._run_core(task, messages, tools_schema, trace=trace, active_skill=active_skill_name)
 
         # ── Self-Verification Loop ──

@@ -130,6 +130,31 @@ Each MCP Server tracks a live `ServerRuntimeState`:
 - **`CONNECTED`**: Successfully initialized, tools discovered and mounted to agent.
 - **`FAILED`**: Initialization or transport failure; error captured in `last_error` with fault isolation preventing cascade failures across servers.
 
+### Tool Progressive Disclosure Architecture
+
+When multiple MCP servers are mounted, exposing dozens of tool schemas indiscriminately causes severe token bloat and prompt attention dilution. CodePilot Agent implements a **Task-Driven Progressive Tool Discovery & Routing** pipeline:
+
+```mermaid
+flowchart LR
+    Task["1. User Task"] --> Skill["2. Active Skill<br/>(Domain Tags & Context)"]
+    Task --> Discovery["3. ToolDiscovery<br/>(Hybrid Scoring)"]
+    Skill -->|Context Boost| Discovery
+    Registry["ToolRegistry<br/>(Native + All MCP Tools)"] -->|Candidate Tools| Discovery
+    Discovery -->|Top-K Schemas| Agent["4. ReActAgent<br/>(Focused Tool Context)"]
+    Agent -->|execute()| Exec["5. Tool Execution<br/>(Full Polymorphic Registry)"]
+```
+
+#### Hybrid Scoring Strategy
+1. **Tool Name Matching**: Exact and tokenized match against tool identifiers (e.g., `read_file`, `query_database`).
+2. **Description Keyword Matching**: Lexical and synonym cluster overlap with tool descriptions.
+3. **Skill Context Boost**: Boost tools aligned with the active domain skill (e.g., `repository-explorer` boosts search/git tools; `bug-fix` boosts test/edit tools).
+4. **Core Baseline Fallback**: Preserves safe baseline native tools while maintaining transparent fallback when query matches are sparse.
+
+#### Benchmark Optimization
+Evaluated on a heterogeneous test suite of 10 tools (5 Native + 5 MCP) across 5 representative developer tasks (`scripts/benchmark_tool_discovery.py`), Progressive Tool Discovery delivers:
+- **Token Reduction**: **-69.1%** average prompt tokens per iteration (from ~1251 to ~387 tokens).
+- **Execution Consistency**: `ToolRegistry.execute()` remains unchanged, preserving full polymorphic runtime security, timeouts, and permission checks.
+
 ---
 
 ## 3. Quick Start
