@@ -106,6 +106,30 @@ flowchart LR
 - **5. Agent 消费 (Agent Execution)**: `ReActAgent` fetches unified OpenAI Function Calling schemas via `ToolRegistry.get_schemas()` and executes calls during the ReAct loop.
 - **6. 安全拦截 (Security Enforcement)**: Every MCP tool invocation remains strictly guarded by `PermissionPolicy`, `ToolGuardrail`, and parameter boundaries.
 
+### MCP Server Lifecycle & Persistence
+
+CodePilot Agent supports a dual-tier configuration and lifecycle model to balance static developer presets with dynamic runtime registrations:
+
+- **Static Presets (`mcp.json`)**: Version-controlled declarative server declarations for developer environments and fixed baseline tooling.
+- **Runtime Persistence (`data/mcp_servers.json`)**: Dynamically added servers via Web GUI or `POST /api/mcp/connect` are atomically persisted to `data/mcp_servers.json`. During FastAPI startup (`lifespan`), `mcp_registry.startup_restore()` automatically recovers and reconnects previously connected servers with failure isolation.
+
+```mermaid
+flowchart LR
+    User["GUI / REST API"] -->|POST /api/mcp/connect| Store["Config Store<br/>(data/mcp_servers.json)"]
+    Store -->|startup_restore()| Registry["MCPRegistry<br/>(State Tracking)"]
+    Registry -->|connect()| Client["MCPClient<br/>(stdio / SSE)"]
+    Client -->|list_tools()| MCPTools["MCPTool Adapter"]
+    MCPTools -->|mount_mcp_registry()| ToolReg["ToolRegistry"]
+    ToolReg -->|get_schemas()| Agent["ReActAgent"]
+```
+
+#### Lifecycle State Machine
+Each MCP Server tracks a live `ServerRuntimeState`:
+- **`DISCONNECTED`**: Configured or created, not yet active.
+- **`CONNECTING`**: Transport handshake / initialization in progress.
+- **`CONNECTED`**: Successfully initialized, tools discovered and mounted to agent.
+- **`FAILED`**: Initialization or transport failure; error captured in `last_error` with fault isolation preventing cascade failures across servers.
+
 ---
 
 ## 3. Quick Start

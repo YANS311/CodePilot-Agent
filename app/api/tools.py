@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.api.chat import _build_registry
 from app.mcp.registry import MCPServerConfig, mcp_registry
+from app.mcp.storage import mcp_config_store
 from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -59,8 +60,9 @@ def _get_unified_registry() -> ToolRegistry:
 
 
 @router.get("/api/tools", response_model=ToolsListResponse)
+@router.get("/tools", response_model=ToolsListResponse)
 async def list_all_tools() -> ToolsListResponse:
-    """获取当前所有已挂载的原生与 MCP 工具的统一元数据。"""
+    """列出当前所有已挂载的原生与 MCP 工具的统一元数据。"""
     reg = _get_unified_registry()
     metadata_list = reg.get_tools_metadata()
 
@@ -78,39 +80,43 @@ async def list_all_tools() -> ToolsListResponse:
 
 @router.get("/api/skills", response_model=SkillsTierResponse)
 async def list_skills() -> SkillsTierResponse:
-    """获取分层技能视图 (Tier 1 Core System Tools vs Tier 2 MCP Skills)。"""
-    reg = _get_unified_registry()
-    metadata_list = reg.get_tools_metadata()
+    """分层展示系统所有技能：Tier 1 原生核心工具 vs Tier 2 外部 MCP 动态扩展工具。"""
+    unified_reg = _get_unified_registry()
+    all_metadata = unified_reg.get_tools_metadata()
 
-    tier1 = [ToolMetadataItem(**m) for m in metadata_list if m.get("source") == "native"]
-    tier2 = [ToolMetadataItem(**m) for m in metadata_list if m.get("source") == "mcp"]
+    tier1 = []
+    tier2 = []
+
+    for item in all_metadata:
+        m = ToolMetadataItem(**item)
+        if m.source == "native":
+            tier1.append(m)
+        else:
+            tier2.append(m)
 
     return SkillsTierResponse(
         tier1_core_tools=tier1,
         tier2_mcp_skills=tier2,
-        total_skills=len(metadata_list),
+        total_skills=len(all_metadata),
     )
 
 
 @router.get("/api/mcp/servers")
 async def list_mcp_servers() -> Dict[str, Any]:
     """获取当前已注册的 MCP Server 及其连接状态。"""
-    mcp_path = Path(__file__).resolve().parent.parent.parent / "mcp.json"
-    if not mcp_registry._configs and mcp_path.exists():
-        try:
-            mcp_registry.load_from_json(mcp_path)
-        except Exception as exc:
-            logger.debug("Auto loading mcp.json fallback: %s", exc)
-
     servers_info = []
     for name, cfg in mcp_registry._configs.items():
         client = mcp_registry.get_client(name)
+        state = mcp_registry.get_server_state(name)
+        status_str = state.status.value if state else ("connected" if (client and client.is_connected) else "disconnected")
         servers_info.append({
             "name": name,
             "transport": cfg.transport,
             "command": cfg.command,
             "url": cfg.url,
+            "status": status_str,
             "is_connected": client.is_connected if client else False,
+            "error": state.last_error if state else None,
             "server_info": client.server_info if client else {},
             "tools_count": sum(1 for t in mcp_registry._tools.values() if t.server_name == name),
         })
@@ -121,15 +127,46 @@ async def list_mcp_servers() -> Dict[str, Any]:
     }
 
 
+@router.get("/api/mcp/status")
+async def get_mcp_status() -> Dict[str, Any]:
+    """获取所有 MCP Server 运行时生命周期状态。"""
+    servers_status = []
+    for name in mcp_registry.list_servers():
+        state = mcp_registry.get_server_state(name)
+        srv_tools = [t.name for t in mcp_registry._tools.values() if t.server_name == name]
+        servers_status.append({
+            "name": name,
+            "status": state.status.value if state else "unknown",
+            "transport": state.transport if state else "stdio",
+            "tools": srv_tools,
+            "tool_count": len(srv_tools),
+            "error": state.last_error if state else None,
+            "last_connected_at": state.last_connected_at if state else None,
+        })
+
+    return {
+        "servers": servers_status,
+        "total": len(servers_status),
+    }
+
+
 @router.post("/api/mcp/connect")
 async def connect_mcp_server(config: MCPServerConfig) -> Dict[str, Any]:
-    """动态注册并连接 MCP Server，拉取工具挂载至系统。"""
+    """动态注册并连接 MCP Server，拉取工具挂载至系统，并持久化配置。"""
     try:
         if config.name in mcp_registry._configs:
+            await mcp_registry.disconnect_server(config.name)
             mcp_registry.unregister_server(config.name)
 
         mcp_registry.register_server(config)
         tools = await mcp_registry.connect_server(config.name)
+
+        # 持久化至 data/mcp_servers.json
+        try:
+            mcp_config_store.save_server(config)
+        except Exception as store_exc:
+            logger.warning("Failed to persist MCP server config '%s': %s", config.name, store_exc)
+
         return {
             "status": "connected",
             "server": config.name,
@@ -142,10 +179,17 @@ async def connect_mcp_server(config: MCPServerConfig) -> Dict[str, Any]:
 
 @router.delete("/api/mcp/servers/{name}")
 async def disconnect_mcp_server(name: str) -> Dict[str, Any]:
-    """断开并注销指定的 MCP Server。"""
-    if name not in mcp_registry._configs:
+    """断开、注销并删除指定的 MCP Server（包括持久化配置）。"""
+    if name not in mcp_registry._configs and not mcp_config_store.get_server(name):
         raise HTTPException(status_code=404, detail=f"MCP Server '{name}' not found")
+
+    # 1. 断开连接并释放资源
+    await mcp_registry.disconnect_server(name)
+    # 2. 从内存注销
     mcp_registry.unregister_server(name)
+    # 3. 从持久化配置删除
+    mcp_config_store.remove_server(name)
+
     return {"status": "unregistered", "server": name}
 
 

@@ -23,20 +23,23 @@ async def lifespan(app: FastAPI):
     logger.info("LLM model:    %s", settings.llm_model)
     logger.info("LLM api_key:  %s...", settings.llm_api_key[:8] if settings.llm_api_key else "(empty)")
     
-    # 启动时自动发现并加载根目录 mcp.json
+    # 启动时自动发现并加载根目录 mcp.json (静态开发配置)
     mcp_file = Path("mcp.json")
     if mcp_file.exists():
         try:
             from app.mcp.registry import mcp_registry
             mcp_registry.load_from_json(mcp_file)
-            logger.info("Auto-indexed %d MCP server(s) from %s", len(mcp_registry._configs), mcp_file)
-            try:
-                tools = await mcp_registry.connect_all()
-                logger.info("Connected MCP server(s) and discovered %d tool(s)", len(tools))
-            except Exception as exc:
-                logger.warning("Failed to connect MCP servers during startup: %s", exc)
+            logger.info("Auto-indexed %d static MCP server(s) from %s", len(mcp_registry._configs), mcp_file)
         except Exception as exc:
             logger.warning("Failed to load mcp.json: %s", exc)
+
+    # 恢复运行时持久化配置并连接所有 MCP Server
+    try:
+        from app.mcp.registry import mcp_registry
+        tools = await mcp_registry.startup_restore()
+        logger.info("Connected MCP server(s) and discovered %d tool(s)", len(tools))
+    except Exception as exc:
+        logger.warning("Failed to restore/connect MCP servers during startup: %s", exc)
     yield
 
 
