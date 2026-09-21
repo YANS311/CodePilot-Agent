@@ -213,7 +213,14 @@
         .mcp-status { display: flex; align-items: center; gap: 4px; font-size: 11px; }
         .mcp-status-dot { width: 8px; height: 8px; border-radius: 50%; }
         .mcp-status-dot.connected { background: #3fb950; }
+        .mcp-status-dot.connecting { background: #d29922; }
+        .mcp-status-dot.failed { background: #f85149; }
         .mcp-status-dot.disconnected { background: #8b949e; }
+        .btn-mcp-delete {
+            background: none; border: 1px solid #30363d; border-radius: 4px;
+            color: #f85149; font-size: 11px; padding: 2px 6px; cursor: pointer;
+        }
+        .btn-mcp-delete:hover { background: #b62324; color: #fff; border-color: #b62324; }
         .mcp-cmd {
             font-family: monospace; font-size: 11px; color: #79c0ff; background: #161b22;
             padding: 4px 6px; border-radius: 4px; margin-bottom: 8px; word-break: break-all;
@@ -744,23 +751,49 @@
                 return;
             }
 
-            container.innerHTML = servers.map(s => `
+            container.innerHTML = servers.map(s => {
+                let statusClass = 'disconnected';
+                let statusText = '未连接';
+                let statusColor = '#8b949e';
+                const st = s.status || (s.is_connected ? 'connected' : 'disconnected');
+                if (st === 'connected') {
+                    statusClass = 'connected';
+                    statusText = '已连接';
+                    statusColor = '#3fb950';
+                } else if (st === 'connecting') {
+                    statusClass = 'connecting';
+                    statusText = '连接中';
+                    statusColor = '#d29922';
+                } else if (st === 'failed') {
+                    statusClass = 'failed';
+                    statusText = '失败';
+                    statusColor = '#f85149';
+                }
+
+                const errHtml = s.error ? `<div style="color:#f85149;font-size:11px;margin-bottom:6px;word-break:break-all;">⚠️ ${escapeHtml(s.error)}</div>` : '';
+
+                return `
                 <div class="mcp-card">
                     <div class="mcp-header">
                         <span class="mcp-name">🔌 ${escapeHtml(s.name)}</span>
-                        <div class="mcp-status">
-                            <span class="mcp-status-dot ${s.is_connected ? 'connected' : 'disconnected'}"></span>
-                            <span style="color:${s.is_connected ? '#3fb950' : '#8b949e'}">${s.is_connected ? '已连接' : '未连接'}</span>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div class="mcp-status">
+                                <span class="mcp-status-dot ${statusClass}"></span>
+                                <span style="color:${statusColor}">${statusText}</span>
+                            </div>
+                            <button class="btn-mcp-delete" title="删除 Server" onclick="deleteMcpServer('${escapeJs(s.name)}')">删除</button>
                         </div>
                     </div>
                     <div class="mcp-cmd">${escapeHtml(s.command || s.url || 'stdio transport')}</div>
+                    ${errHtml}
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:11px;color:#8b949e;">动态工具: <strong style="color:#58a6ff;">${s.tools_count}</strong> 个</span>
                         <button class="mcp-tools-toggle" onclick="toggleMcpTools('${escapeJs(s.name)}')">查看工具 &darr;</button>
                     </div>
                     <div id="mcp-tools-${escapeHtml(s.name)}" style="display:none;margin-top:8px;"></div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         } catch (e) {
             container.innerHTML = `<div style="color:#da3633;font-size:12px;">加载失败: ${escapeHtml(e.message)}</div>`;
         }
@@ -834,6 +867,22 @@
             loadMcpServers();
         } catch (e) {
             alert('连接失败: ' + e.message);
+        }
+    }
+
+    async function deleteMcpServer(name) {
+        if (!confirm(`确定要注销并删除 MCP Server '${name}' 吗？`)) return;
+        try {
+            const resp = await fetch('/api/mcp/servers/' + encodeURIComponent(name), {
+                method: 'DELETE'
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.detail || '删除失败');
+            }
+            loadMcpServers();
+        } catch (e) {
+            alert('删除失败: ' + e.message);
         }
     }
 

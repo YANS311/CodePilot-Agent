@@ -74,7 +74,23 @@ class ExecutionTrace:
     total_latency_ms: float = 0.0
     status: str = "running"  # "completed" | "budget_exhausted" | "error"
     active_skill: Optional[str] = None
+    tool_selection: Optional[Dict[str, Any]] = None
     created_at: float = field(default_factory=time.time)
+
+    def record_tool_selection(
+        self,
+        candidate_count: int,
+        selected_tools: List[str],
+        reason: str = "",
+        scores: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """记录动态工具检索与过滤决策信息。"""
+        self.tool_selection = {
+            "candidate_count": candidate_count,
+            "selected_tools": selected_tools,
+            "scores": scores or {},
+            "reason": reason,
+        }
 
     def add_step(
         self,

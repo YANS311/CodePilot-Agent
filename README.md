@@ -83,6 +83,80 @@ graph TD
 
 ---
 
+## MCP Runtime Integration
+
+CodePilot Agent seamlessly integrates the Model Context Protocol (MCP) into the agent's core ReAct loop, providing dynamic tool discovery, runtime mounting, and strict sandbox enforcement.
+
+### End-to-End Invocation Chain (配置 → Registry → Tool → Agent)
+
+```mermaid
+flowchart LR
+    Config["1. Config<br/>(mcp.json / API)"] -->|load_from_json / connect_server| Registry["2. MCPRegistry<br/>(Handshake & tools/list)"]
+    Registry -->|wrap definition| MCPTool["3. MCPTool Adapter<br/>(BaseTool + Path Guard)"]
+    MCPTool -->|mount_mcp_registry| ToolRegistry["4. ToolRegistry<br/>(Native + MCP Tools)"]
+    ToolRegistry -->|get_schemas()| Agent["5. ReActAgent<br/>(OpenAI Function Calling)"]
+    Agent -->|execute(tool_call)| Security["6. Security Boundary<br/>(PermissionPolicy + Guardrail)"]
+    Security -->|run()| RemoteServer["7. External MCP Server<br/>(stdio / SSE)"]
+```
+
+- **1. 配置 (Configuration)**: MCP Server configurations are defined in `mcp.json` (stdio / SSE) or dynamically registered via `POST /api/mcp/connect`.
+- **2. 注册中心 (Registry)**: `MCPRegistry` manages client transports, initiates JSON-RPC 2.0 handshakes (`initialize`), and queries available tools (`tools/list`).
+- **3. 工具适配 (Tool Adapter)**: Remote tool definitions are wrapped as `MCPTool` instances (inheriting `BaseTool`) with built-in path traversal guards (`_check_path_security`) and timeout protection.
+- **4. 统一挂载 (Mounting)**: `ToolRegistry.mount_mcp_registry()` injects all active MCP tools alongside native tools in `app/api/chat.py`.
+- **5. Agent 消费 (Agent Execution)**: `ReActAgent` fetches unified OpenAI Function Calling schemas via `ToolRegistry.get_schemas()` and executes calls during the ReAct loop.
+- **6. 安全拦截 (Security Enforcement)**: Every MCP tool invocation remains strictly guarded by `PermissionPolicy`, `ToolGuardrail`, and parameter boundaries.
+
+### MCP Server Lifecycle & Persistence
+
+CodePilot Agent supports a dual-tier configuration and lifecycle model to balance static developer presets with dynamic runtime registrations:
+
+- **Static Presets (`mcp.json`)**: Version-controlled declarative server declarations for developer environments and fixed baseline tooling.
+- **Runtime Persistence (`data/mcp_servers.json`)**: Dynamically added servers via Web GUI or `POST /api/mcp/connect` are atomically persisted to `data/mcp_servers.json`. During FastAPI startup (`lifespan`), `mcp_registry.startup_restore()` automatically recovers and reconnects previously connected servers with failure isolation.
+
+```mermaid
+flowchart LR
+    User["GUI / REST API"] -->|POST /api/mcp/connect| Store["Config Store<br/>(data/mcp_servers.json)"]
+    Store -->|startup_restore()| Registry["MCPRegistry<br/>(State Tracking)"]
+    Registry -->|connect()| Client["MCPClient<br/>(stdio / SSE)"]
+    Client -->|list_tools()| MCPTools["MCPTool Adapter"]
+    MCPTools -->|mount_mcp_registry()| ToolReg["ToolRegistry"]
+    ToolReg -->|get_schemas()| Agent["ReActAgent"]
+```
+
+#### Lifecycle State Machine
+Each MCP Server tracks a live `ServerRuntimeState`:
+- **`DISCONNECTED`**: Configured or created, not yet active.
+- **`CONNECTING`**: Transport handshake / initialization in progress.
+- **`CONNECTED`**: Successfully initialized, tools discovered and mounted to agent.
+- **`FAILED`**: Initialization or transport failure; error captured in `last_error` with fault isolation preventing cascade failures across servers.
+
+### Tool Progressive Disclosure Architecture
+
+When multiple MCP servers are mounted, exposing dozens of tool schemas indiscriminately causes severe token bloat and prompt attention dilution. CodePilot Agent implements a **Task-Driven Progressive Tool Discovery & Routing** pipeline:
+
+```mermaid
+flowchart LR
+    Task["1. User Task"] --> Skill["2. Active Skill<br/>(Domain Tags & Context)"]
+    Task --> Discovery["3. ToolDiscovery<br/>(Hybrid Scoring)"]
+    Skill -->|Context Boost| Discovery
+    Registry["ToolRegistry<br/>(Native + All MCP Tools)"] -->|Candidate Tools| Discovery
+    Discovery -->|Top-K Schemas| Agent["4. ReActAgent<br/>(Focused Tool Context)"]
+    Agent -->|execute()| Exec["5. Tool Execution<br/>(Full Polymorphic Registry)"]
+```
+
+#### Hybrid Scoring Strategy
+1. **Tool Name Matching**: Exact and tokenized match against tool identifiers (e.g., `read_file`, `query_database`).
+2. **Description Keyword Matching**: Lexical and synonym cluster overlap with tool descriptions.
+3. **Skill Context Boost**: Boost tools aligned with the active domain skill (e.g., `repository-explorer` boosts search/git tools; `bug-fix` boosts test/edit tools).
+4. **Core Baseline Fallback**: Preserves safe baseline native tools while maintaining transparent fallback when query matches are sparse.
+
+#### Benchmark Optimization
+Evaluated on a heterogeneous test suite of 10 tools (5 Native + 5 MCP) across 5 representative developer tasks (`scripts/benchmark_tool_discovery.py`), Progressive Tool Discovery delivers:
+- **Token Reduction**: **-69.1%** average prompt tokens per iteration (from ~1251 to ~387 tokens).
+- **Execution Consistency**: `ToolRegistry.execute()` remains unchanged, preserving full polymorphic runtime security, timeouts, and permission checks.
+
+---
+
 ## 3. Quick Start
 
 ### 3.1 Setup Environment
