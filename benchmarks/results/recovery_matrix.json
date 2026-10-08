@@ -1,0 +1,164 @@
+{
+  "label": "OFFLINE scripted model + real file/test tools; reliability, not TSR or exactly-once",
+  "rows": [
+    {
+      "scenario": "safe_read",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "completed": true,
+        "no_replay": true,
+        "budget_preserved": true,
+        "context_preserved": true
+      },
+      "executed_call_ids": [
+        "read"
+      ],
+      "rejection_reason": null
+    },
+    {
+      "scenario": "indeterminate_write",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "rejected": true,
+        "no_new_effect": true,
+        "indeterminate": true,
+        "recovery_event": true
+      },
+      "executed_call_ids": [
+        "write-1"
+      ],
+      "rejection_reason": "indeterminate_tool_exchange"
+    },
+    {
+      "scenario": "verification_progress",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "completed": true,
+        "correct_retry": true,
+        "no_duplicate_attempt": true
+      },
+      "executed_call_ids": [
+        "write-1",
+        "verify_0",
+        "write-2",
+        "verify_1"
+      ],
+      "rejection_reason": null
+    },
+    {
+      "scenario": "workspace_changed",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "rejected": true,
+        "no_new_effect": true
+      },
+      "executed_call_ids": [
+        "read"
+      ],
+      "rejection_reason": "workspace_identity_mismatch"
+    },
+    {
+      "scenario": "corrupt_snapshot",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "rejected": true,
+        "no_new_effect": true
+      },
+      "executed_call_ids": [
+        "read"
+      ],
+      "rejection_reason": "corrupt_snapshot"
+    },
+    {
+      "scenario": "policy_changed",
+      "status": "PASS",
+      "assertions": {
+        "new_runtime": true,
+        "trace_integrity": true,
+        "rejected": true,
+        "no_new_effect": true
+      },
+      "executed_call_ids": [
+        "read"
+      ],
+      "rejection_reason": "tool_budget_policy_changed"
+    }
+  ],
+  "provenance": {
+    "executed_at_utc": "2026-10-08T10:26:15.948875+00:00",
+    "git_sha": "eeb99a8c47990f204cd3ad21eb7059f5893d96be",
+    "tracked_worktree_dirty": false,
+    "benchmark_source_sha256": "ca27ab743bd3fb0985f850536a56394f969363bdd52bd770c65d292c88edab0a",
+    "python": "3.11.15",
+    "platform": "Windows",
+    "mode": "offline",
+    "model": "ScriptedLLM-v1",
+    "provider_category": "offline scripted",
+    "temperature": 0.0,
+    "config": {
+      "repetitions": 2,
+      "order_seed": 17,
+      "max_tool_calls": 8,
+      "task_timeout_seconds": 120,
+      "memory_state": "seeded"
+    },
+    "estimated_tokens": "UTF-8 bytes / 3 rounded up; not billed tokens",
+    "context_budget": {
+      "max_input_tokens": 32768,
+      "reserve_output_tokens": 4096,
+      "system_budget": 4096,
+      "workspace_budget": 3072,
+      "memory_budget": 3072,
+      "skill_budget": 4096,
+      "history_budget": 16384,
+      "tool_observation_budget": 250,
+      "recent_message_count": 6
+    },
+    "generation_max_output_tokens": null,
+    "verification_max_retries": 1,
+    "independent_pytest_runner": "LocalExecutionRunner (30s subprocess ceiling)",
+    "checkpoint_in_normal_ablations": false,
+    "memory_backend": "isolated HybridMemoryManager structured + deterministic hash vectors",
+    "profiles": [
+      {
+        "id": "A",
+        "name": "ReAct baseline",
+        "memory": false,
+        "context": false,
+        "verification": false
+      },
+      {
+        "id": "B",
+        "name": "ReAct + Memory",
+        "memory": true,
+        "context": false,
+        "verification": false
+      },
+      {
+        "id": "C",
+        "name": "ReAct + Memory + Context",
+        "memory": true,
+        "context": true,
+        "verification": false
+      },
+      {
+        "id": "D",
+        "name": "Full Harness",
+        "memory": true,
+        "context": true,
+        "verification": true
+      }
+    ],
+    "tools_sha256": "925a9d4f4f41ca8bc289c3f06e85e02b67155263ca8886b3bd714730c10bf412"
+  }
+}

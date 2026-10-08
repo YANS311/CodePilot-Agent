@@ -1,0 +1,9 @@
+avg_executed_tool_calls,avg_llm_requests,avg_task_latency_ms,avg_total_estimated_input_tokens,budget_exhaustions,cancelled_tasks,completed_tasks,context_budget_failures,evaluation_errors,experiment,latency_population_stddev_ms,pass_at_1,profile,recovered_test_failures,runtime_errors,status,task_failure_rate,task_success_rate,task_timeouts,terminal_status_counts,trial_count,verification_failures,verification_pass_rate
+,,,,,,,,,real_model,,,A,,,NOT RUN,,,,,,,
+,,,,,,,,,real_model,,,B,,,NOT RUN,,,,,,,
+,,,,,,,,,real_model,,,C,,,NOT RUN,,,,,,,
+,,,,,,,,,real_model,,,D,,,NOT RUN,,,,,,,
+2,3,884.8389833328838,38510.666666666664,0,0,6,0,0,simulated,34.200964064147776,,A,0,0,SIMULATED,0.6666666666666667,0.3333333333333333,0,"{""completed"": 6}",6,0,
+2,3,886.6443333336065,38791.666666666664,0,0,6,0,0,simulated,27.81858268279783,,B,0,0,SIMULATED,0.6666666666666667,0.3333333333333333,0,"{""completed"": 6}",6,0,
+2,3,890.8756999996209,13263.666666666666,0,0,6,0,0,simulated,27.48141329181442,,C,0,0,SIMULATED,0.6666666666666667,0.3333333333333333,0,"{""completed"": 6}",6,0,
+4.333333333333333,4.333333333333333,2240.1316499999666,20036.666666666668,0,0,4,0,0,simulated,458.8896937740044,,D,2,0,SIMULATED,0.33333333333333337,0.6666666666666666,0,"{""completed"": 4, ""verification_failed"": 2}",6,6,0.6666666666666666
