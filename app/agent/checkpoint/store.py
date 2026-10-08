@@ -130,7 +130,21 @@ class FileCheckpointStore:
             if checkpoint.revision != revision:
                 raise CheckpointError("Stale checkpoint revision")
             if previous and previous.status in {"completed", "failed", "cancelled", "budget_exhausted", "verification_failed"}:
-                raise CheckpointError("Terminal checkpoint cannot be overwritten")
+                old_data = previous.model_dump(mode="json")
+                frozen = set(AgentCheckpoint.model_fields) - {"trace", "revision", "updated_at"}
+                if any(data[name] != old_data[name] for name in frozen):
+                    raise CheckpointError("Terminal checkpoint cannot be overwritten")
+                frozen_trace = set(data["trace"]) - {"events", "next_event_id"}
+                if any(data["trace"][name] != old_data["trace"][name] for name in frozen_trace):
+                    raise CheckpointError("Terminal trace facts cannot be overwritten")
+                if checkpoint.trace.next_event_id < previous.trace.next_event_id:
+                    raise CheckpointError("Terminal trace cursor cannot regress")
+                prior_events = previous.trace.events
+                if checkpoint.trace.events[:len(prior_events)] != prior_events or any(
+                    event.agent_action not in {"checkpoint_loaded", "resume_rejected", "recovery_required"}
+                    for event in checkpoint.trace.events[len(prior_events):]
+                ):
+                    raise CheckpointError("Terminal trace can only append resume rejection events")
             data.update(revision=revision + 1, updated_at=timestamp())
             saved = AgentCheckpoint.model_validate(data)
             encoded = json.dumps(saved.model_dump(mode="json"), ensure_ascii=False, allow_nan=False).encode("utf-8")

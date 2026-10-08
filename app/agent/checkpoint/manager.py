@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 
 from app.agent.budget import ToolBudget
 from app.agent.trace import ExecutionTrace
@@ -12,6 +13,14 @@ from app.models.state import AgentState
 
 from .models import AgentCheckpoint, CheckpointError, PendingCall, TraceSnapshot, digest
 from .store import CheckpointStore
+
+
+def _linked_entry(path: Path) -> bool:
+    # Python 3.11 has no Path.is_junction(); reject Windows reparse points too.
+    return path.is_symlink() or bool(
+        getattr(path.lstat(), "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
 
 
 def workspace_fingerprint(root: str | Path) -> str:
@@ -25,7 +34,7 @@ def workspace_fingerprint(root: str | Path) -> str:
         dirs[:] = sorted(name for name in dirs if name not in {".git", "__pycache__", ".pytest_cache"})
         for name in dirs + sorted(files):
             path = Path(current) / name
-            if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+            if _linked_entry(path):
                 raise CheckpointError("Linked workspace entries are unsupported for checkpointing")
         for name in sorted(files):
             path = Path(current) / name

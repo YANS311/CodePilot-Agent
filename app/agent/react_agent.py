@@ -6,11 +6,18 @@ import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from contextlib import nullcontext
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
-from app.agent.context import ContextBudget, ContextBuildResult, ContextManager
+from app.agent.checkpoint import CheckpointError, CheckpointManager, ResumeRejected
+from app.agent.checkpoint.models import ResultSnapshot, TERMINAL_STATUSES
+from app.agent.checkpoint.manager import workspace_fingerprint
+from app.agent.checkpoint.store import reject_credentials
+from app.agent.context import ContextBudget, ContextBuildResult, ContextManager, ContextStats
+from app.agent.context.compactor import group_messages
 from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.trace import ExecutionStepTrace, ExecutionTrace, TraceSink
@@ -148,6 +155,7 @@ class ReActAgent:
         skill_manager_instance: SkillManager | None = None,
         trace_sink: TraceSink | None = None,
         context_manager: ContextManager | None = None,
+        checkpoint_manager: CheckpointManager | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -170,21 +178,194 @@ class ReActAgent:
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
         self._verification = verification_policy or VerificationPolicy()
+        self._checkpoint_manager = checkpoint_manager
+        self._checkpoint_state = None
+        self._checkpoint_result = None
+        self._checkpoint_context = None
 
     async def run(self, task: str, *, task_id: str | None = None) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
         trace = ExecutionTrace(task=task, task_id=task_id or uuid.uuid4().hex, sink=self._trace_sink)
-        trace.record_event("task_start", execution_result="started")
-        try:
-            return await self._run_task(task, trace)
-        except (Exception, asyncio.CancelledError) as exc:
-            trace.status = "error"
-            trace.record_event(
-                "task_complete",
-                execution_result="cancelled" if isinstance(exc, asyncio.CancelledError) else "error",
-                metadata={"error_type": type(exc).__name__},
+        lease = self._checkpoint_manager.store.lease(trace.task_id) if self._checkpoint_manager else nullcontext()
+        with lease:
+            if self._checkpoint_manager:
+                try:
+                    self._checkpoint_manager.store.load(trace.task_id)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise ResumeRejected("task_id_already_exists")
+            trace.record_event("task_start", execution_result="started")
+            if self._checkpoint_manager:
+                self._budget = ToolBudget(max_calls=self._max_tool_calls)
+                self._has_drift_corrected = self._has_completion_corrected = False
+                self._guardrail = ToolGuardrail()
+                self._error_events = []
+                self._checkpoint_context = None
+                self._checkpoint_result = AgentRunResult(answer="", trace=trace)
+                self._checkpoint_state = self._checkpoint_manager.create(
+                    trace.task_id, task, self._workspace_root, self._max_tool_calls,
+                    self._verification, self._context_manager, self._registry.get_schemas(), trace,
+                )
+            try:
+                result = await self._run_task(task, trace)
+                if self._checkpoint_state and self._checkpoint_state.next_step != "terminal":
+                    self._save_checkpoint(result, result.messages, trace, next_step="terminal", terminal=True)
+                return result
+            except (Exception, asyncio.CancelledError) as exc:
+                self._record_failure(trace, exc)
+                raise
+
+    def _record_failure(self, trace, exc) -> None:
+        trace.status = "error"
+        trace.record_event(
+            "task_complete", execution_result="cancelled" if isinstance(exc, asyncio.CancelledError) else "error",
+            metadata={"error_type": type(exc).__name__},
+        )
+        if self._checkpoint_state is not None:
+            state = self._checkpoint_state
+            if state.in_flight:
+                trace.record_event("recovery_required", execution_result="indeterminate", metadata={"recovery_reason": "indeterminate_tool_exchange"})
+                status = "indeterminate"
+            else:
+                status = "cancelled" if isinstance(exc, asyncio.CancelledError) else "failed"
+            updated = state.model_copy(update={
+                "status": status, "next_step": state.next_step if state.in_flight else "terminal",
+                "trace": self._checkpoint_manager.capture_trace(trace, reserve=0),
+            })
+            updated.trace.next_event_id = max(updated.trace.next_event_id, state.trace.next_event_id)
+            try:
+                self._checkpoint_state = self._checkpoint_manager.store.save(updated)
+            except Exception as storage_error:
+                # Keep the prior durable marker; never mask the original runtime error.
+                logger.error("Failed to persist task failure: %s", type(storage_error).__name__)
+
+    async def resume_task(self, task_id: str) -> AgentRunResult:
+        """Explicit opt-in resumption of a safe local checkpoint, never tool replay."""
+        if self._checkpoint_manager is None:
+            raise ResumeRejected("checkpointing_not_enabled")
+        with self._checkpoint_manager.store.lease(task_id):
+            state = self._checkpoint_manager.store.load(task_id)
+            event_cursor = state.trace.next_event_id
+            # Claim lifecycle IDs durably before emitting anything to an external sink.
+            state = self._checkpoint_manager.store.save(state.model_copy(update={
+                "trace": state.trace.model_copy(update={"next_event_id": event_cursor + 4}),
+            }))
+            trace = ExecutionTrace(
+                task=state.task, task_id=state.task_id, sink=self._trace_sink,
+                events=deepcopy(state.trace.events), steps=deepcopy(state.trace.steps),
+                status=state.trace.status, active_skill=state.active_skill,
+                total_latency_ms=state.trace.total_latency_ms, created_at=state.trace.created_at,
             )
-            raise
+            trace.restore_cursor(event_cursor)
+            trace.record_event("checkpoint_loaded", execution_result="success", metadata={"checkpoint_version": state.schema_version, "checkpoint_step": state.runtime.iteration})
+            try:
+                reason = "terminal_checkpoint" if state.status in TERMINAL_STATUSES else self._checkpoint_manager.validate_resume(
+                    state, self._workspace_root, self._max_tool_calls, self._verification,
+                    self._context_manager, self._registry.get_schemas(),
+                )
+            except (OSError, CheckpointError):
+                reason = "workspace_validation_failed"
+            if reason is None and not self._guardrail.check_prompt(state.task).allow:
+                reason = "current_prompt_policy_rejected"
+            if reason:
+                action = "recovery_required" if state.in_flight else "resume_rejected"
+                trace.record_event(action, execution_result="rejected", metadata={"recovery_reason": reason})
+                snapshot = self._checkpoint_manager.capture_trace(trace, reserve=0)
+                snapshot.next_event_id = max(snapshot.next_event_id, state.trace.next_event_id)
+                self._checkpoint_manager.store.save(state.model_copy(update={"trace": snapshot}))
+                raise ResumeRejected(reason, trace)
+            self._checkpoint_state = state.model_copy(update={"resume_count": state.resume_count + 1})
+            self._budget = ToolBudget(**asdict(state.budget))
+            self._has_drift_corrected = state.drift_corrected
+            self._has_completion_corrected = state.completion_corrected
+            self._error_events = deepcopy(state.result.error_events)
+            self._guardrail.restore_checkpoint_state(state.guardrail_read_count, state.guardrail_read_timestamps, state.result.security_warnings)
+            messages = deepcopy(state.messages)
+            estimated = self._context_manager.estimator.estimate_messages(messages, self._registry.get_schemas())
+            self._checkpoint_context = ContextBuildResult(
+                messages, ContextStats(estimated, estimated, len(messages), len(messages)),
+                core_system=state.core_system, optional_sections=dict(state.optional_sections),
+            )
+            result = AgentRunResult(
+                **{name: deepcopy(getattr(state.result, name)) for name in ResultSnapshot.model_fields},
+                messages=messages, active_skill=state.active_skill, trace=trace,
+            )
+            self._checkpoint_result = result
+            trace.record_event("task_resumed", execution_result="success", metadata={"resume_count": state.resume_count + 1, "restored_tool_budget": self._budget.remaining_calls})
+            try:
+                self._save_checkpoint(result, messages, trace, status="resumed", llm_request_prepared=state.llm_request_prepared)
+                schemas = self._registry.get_schemas()
+                if state.next_step in {"core", "repair", "summary"}:
+                    result = await self._run_core(
+                        state.task, messages, schemas, trace=trace, active_skill=state.active_skill,
+                        initial_context=self._checkpoint_context, prior_result=result,
+                        start_iteration=state.runtime.iteration,
+                    )
+                if self._checkpoint_state.next_step == "verify":
+                    result = await self._verify(
+                        state.task, result, messages, schemas, initial_context=self._checkpoint_context,
+                        start_retries=self._checkpoint_state.verification_attempt,
+                    )
+                return self._finish_task(state.task, result, trace)
+            except (Exception, asyncio.CancelledError) as exc:
+                self._record_failure(trace, exc)
+                raise
+
+    def _save_checkpoint(self, result, messages, trace, *, next_step=None, iteration=None, in_flight=None, status=None, terminal=False, llm_request_prepared=False) -> None:
+        if self._checkpoint_state is None:
+            return
+        state = self._checkpoint_state
+        started = time.perf_counter()
+        if messages and self._checkpoint_context is not None:
+            prepared = self._context_manager.compact_messages(messages, tools=self._registry.get_schemas(), initial_context=self._checkpoint_context)
+            messages[:] = prepared.messages
+            self._checkpoint_context.optional_sections = prepared.optional_sections
+            if prepared.stats.compaction_triggered:
+                trace.record_event("context_compaction", execution_result="success", metadata={
+                    "phase": "checkpoint", **prepared.stats.to_metadata(),
+                })
+        pending = in_flight or []
+        runtime = state.runtime.model_copy(update={"iteration": state.runtime.iteration if iteration is None else iteration})
+        read_count, read_times = self._guardrail.checkpoint_state()
+        captured_trace = self._checkpoint_manager.capture_trace(trace, reserve=1 + 2 * len(pending) + (8 if pending else 0))
+        captured_trace.next_event_id = max(captured_trace.next_event_id, state.trace.next_event_id)
+        if terminal:
+            status = trace.status if trace.status in TERMINAL_STATUSES else "failed"
+        updated = state.model_copy(update={
+            "status": status or ("indeterminate" if pending else "checkpointed"),
+            "next_step": next_step or state.next_step, "runtime": runtime,
+            "messages": deepcopy(messages), "active_skill": result.active_skill,
+            "budget": deepcopy(self._budget), "drift_corrected": self._has_drift_corrected,
+            "completion_corrected": self._has_completion_corrected,
+            "llm_request_prepared": llm_request_prepared,
+            "completed_tool_ids": [item.tool_call_id for item in result.tool_results],
+            "last_completed_outcome": result.tool_results[-1] if result.tool_results else None,
+            "in_flight": pending, "result": ResultSnapshot.capture(result), "trace": captured_trace,
+            "core_system": self._checkpoint_context.core_system if self._checkpoint_context else None,
+            "optional_sections": dict(self._checkpoint_context.optional_sections) if self._checkpoint_context else {},
+            "workspace_digest": workspace_fingerprint(self._workspace_root),
+            "guardrail_read_count": read_count, "guardrail_read_timestamps": read_times,
+            "memory_attempted": terminal or state.memory_attempted,
+        })
+        reject_credentials(updated.model_dump(mode="json"), (settings.llm_api_key,))
+        self._checkpoint_state = self._checkpoint_manager.store.save(updated)
+        size = len(json.dumps(self._checkpoint_state.model_dump(mode="json"), ensure_ascii=False).encode("utf-8"))
+        trace.record_event("checkpoint_saved", execution_result="success", metadata={
+            "checkpoint_version": state.schema_version, "checkpoint_step": runtime.iteration,
+            "checkpoint_size_bytes": size, "checkpoint_duration_ms": (time.perf_counter() - started) * 1000,
+        })
+
+    def _finish_task(self, task, result, trace):
+        if self._verification.enabled and result.wrote_file and not result.verification_passed:
+            trace.status = "verification_failed"
+        if trace.status == "running":
+            trace.status = "completed"
+        trace.record_event("task_complete", execution_result=trace.status)
+        result.trace = trace
+        self._save_checkpoint(result, result.messages, trace, next_step="terminal", terminal=True)
+        self._write_task_memory(task, result, result.steps)
+        return result
 
     async def _run_task(self, task: str, trace: ExecutionTrace) -> AgentRunResult:
 
@@ -261,7 +442,9 @@ class ReActAgent:
             memory=mem_ctx, skill=skill_prompt_section, tools=tools_schema,
         )
         messages = initial.messages
+        self._checkpoint_context = initial
         trace.record_event("context_build", execution_result="success", metadata=initial.stats.to_metadata())
+        self._save_checkpoint(AgentRunResult(answer="", messages=messages, active_skill=active_skill_name, trace=trace), messages, trace, next_step="core", iteration=0)
         result = await self._run_core(
             task, messages, tools_schema, trace=trace, active_skill=active_skill_name, initial_context=initial,
         )
@@ -269,16 +452,7 @@ class ReActAgent:
         # ── Self-Verification Loop ──
         if self._verification.enabled and result.wrote_file:
             result = await self._verify(task, result, messages, tools_schema, initial_context=initial)
-            if not result.verification_passed:
-                trace.status = "verification_failed"
-
-        if trace.status == "running":
-            trace.status = "completed"
-        trace.record_event("task_complete", execution_result=trace.status)
-        result.trace = trace
-
-        self._write_task_memory(task, result, result.steps)
-        return result
+        return self._finish_task(task, result, trace)
 
     async def _run_core(
         self,
@@ -288,19 +462,23 @@ class ReActAgent:
         trace: Optional[ExecutionTrace] = None,
         active_skill: Optional[str] = None,
         initial_context: ContextBuildResult | None = None,
+        prior_result: AgentRunResult | None = None,
+        start_iteration: int = 0,
     ) -> AgentRunResult:
         """Core agent loop — Think → Act → Observe.
 
         Reusable for verification retries: passes existing message history
         so the agent sees prior context plus the test failure.
         """
-        tool_results: list[ToolResult] = []
-        thoughts: list[str] = []
-        steps: list[AgentStep] = []
-        tool_calls_count = 0
+        working = prior_result or AgentRunResult(answer="", messages=messages, active_skill=active_skill, trace=trace)
+        tool_results, thoughts, steps = working.tool_results, working.thoughts, working.steps
+        tool_calls_count = working.tool_calls_count
+        self._checkpoint_result = working
 
-        for iteration in range(self._max_tool_calls):
-            budget_prompt = self._budget.get_budget_prompt()
+        for iteration in range(start_iteration, self._max_tool_calls):
+            if self._checkpoint_state is not None:
+                self._checkpoint_state = self._checkpoint_state.model_copy(update={"runtime": self._checkpoint_state.runtime.model_copy(update={"iteration": iteration})})
+            budget_prompt = "" if self._checkpoint_state and self._checkpoint_state.llm_request_prepared else self._budget.get_budget_prompt()
             if budget_prompt:
                 messages.append({"role": "system", "content": budget_prompt})
 
@@ -350,26 +528,30 @@ class ReActAgent:
                     no_reason = "Agent did not call write_file for code modification task"
                     logger.warning("Code modification task without write_file: %s", task[:80])
 
-                return AgentRunResult(
-                    answer=response.content or "",
-                    tool_calls_count=tool_calls_count,
-                    tool_results=tool_results,
-                    messages=messages,
-                    thoughts=thoughts,
-                    steps=steps,
-                    security_warnings=self._guardrail.warnings,
-                    wrote_file=has_write,
-                    no_code_change_reason=no_reason,
-                    error_events=list(self._error_events),
-                    active_skill=active_skill,
-                    trace=trace,
-                )
+                working.answer = answer
+                working.wrote_file = has_write
+                working.no_code_change_reason = no_reason
+                working.error_events = list(self._error_events)
+                working.security_warnings = self._guardrail.warnings
+                next_step = "verify" if self._verification.enabled and has_write else "finish"
+                self._save_checkpoint(working, messages, trace, next_step=next_step, iteration=0)
+                return working
 
             thought = response.content or ""
             if thought:
                 thoughts.append(thought)
 
             assistant_msg = self._build_assistant_message(response)
+            if self._checkpoint_state is not None:
+                # Validate the whole proposed exchange before any external effect.
+                group_messages(messages + [assistant_msg] + [
+                    {"role": "tool", "tool_call_id": call.id, "content": ""}
+                    for call in response.tool_calls
+                ])
+                completed = set(self._checkpoint_state.completed_tool_ids)
+                if any(call.id in completed for call in response.tool_calls):
+                    raise ResumeRejected("completed_tool_call_id_reused", trace)
+                self._save_checkpoint(working, messages, trace, in_flight=self._checkpoint_manager.pending_calls(response.tool_calls), iteration=iteration)
             messages.append(assistant_msg)
 
             for tc_info in response.tool_calls:
@@ -383,6 +565,7 @@ class ReActAgent:
                     continue
 
                 tool_calls_count += 1
+                working.tool_calls_count = tool_calls_count
                 self._budget.consume()
 
                 if tc_info.name == "search_code":
@@ -464,10 +647,14 @@ class ReActAgent:
                     "content": result.output,
                 })
 
+            working.wrote_file = self._has_write_file_in_trajectory(steps)
+            working.security_warnings = self._guardrail.warnings
             if tool_calls_count >= self._max_tool_calls:
                 break
+            self._save_checkpoint(working, messages, trace, iteration=iteration + 1)
 
         # Budget exhausted: ask LLM to summarize
+        self._save_checkpoint(working, messages, trace, next_step="summary", iteration=self._max_tool_calls)
         final_response = await self._chat_with_context(
             messages, None, trace, phase="final_summary", initial_context=initial_context,
         )
@@ -481,20 +668,13 @@ class ReActAgent:
         if trace:
             trace.status = "budget_exhausted"
 
-        return AgentRunResult(
-            answer=final_response.content or "[达到最大工具调用次数，未能生成回答]",
-            tool_calls_count=tool_calls_count,
-            tool_results=tool_results,
-            messages=messages,
-            thoughts=thoughts,
-            steps=steps,
-            security_warnings=self._guardrail.warnings,
-            wrote_file=has_write,
-            no_code_change_reason=no_reason,
-            error_events=list(self._error_events),
-            active_skill=active_skill,
-            trace=trace,
-        )
+        working.answer = final_response.content or "[达到最大工具调用次数，未能生成回答]"
+        working.wrote_file = has_write
+        working.no_code_change_reason = no_reason
+        working.error_events = list(self._error_events)
+        working.security_warnings = self._guardrail.warnings
+        self._save_checkpoint(working, messages, trace, next_step="verify" if self._verification.enabled and has_write else "finish")
+        return working
 
     async def _chat_with_context(
         self, messages: list[dict[str, Any]], tools: list[dict] | None,
@@ -510,6 +690,8 @@ class ReActAgent:
                 "context_compaction", execution_result="success",
                 metadata={"phase": phase, **prepared.stats.to_metadata()},
             )
+        if self._checkpoint_state is not None:
+            self._save_checkpoint(self._checkpoint_result, messages, trace, llm_request_prepared=True)
         return await self._llm.chat(messages, tools=tools or None)
 
     async def _verify(
@@ -519,6 +701,7 @@ class ReActAgent:
         messages: list[dict[str, Any]],
         tools_schema: list[dict],
         *, initial_context: ContextBuildResult | None = None,
+        start_retries: int = 0,
     ) -> AgentRunResult:
         """Post-write verification loop: run tests, retry on failure.
 
@@ -527,7 +710,7 @@ class ReActAgent:
         let the agent continue fixing. Up to max_retries rounds.
         """
         target = self._verification.test_command or ""
-        retries = 0
+        retries = start_retries
 
         while retries <= self._verification.max_retries:
             logger.info("Verification attempt %d/%d", retries + 1, self._verification.max_retries + 1)
@@ -538,10 +721,16 @@ class ReActAgent:
                 name="run_tests",
                 arguments={"target": target} if target else {},
             )
+            if self._checkpoint_state is not None:
+                self._checkpoint_result = result
+                self._checkpoint_state = self._checkpoint_state.model_copy(update={"verification_attempt": retries})
+                self._save_checkpoint(result, messages, result.trace, next_step="verify", in_flight=self._checkpoint_manager.pending_calls([test_tc]))
             verify_started = time.perf_counter()
-            test_result = await self._registry.execute(
-                test_tc, self._workspace_root, guardrail=self._guardrail
-            )
+            allowed, reason = self._permission_policy.check_tool_permission(test_tc.name, test_tc.arguments)
+            if allowed:
+                test_result = await self._registry.execute(test_tc, self._workspace_root, guardrail=self._guardrail)
+            else:
+                test_result = ToolResult(tool_call_id=test_tc.id, name=test_tc.name, success=False, output=reason, metadata={"permission_blocked": True})
             verify_latency = (time.perf_counter() - verify_started) * 1000.0
             tool_calls_count = result.tool_calls_count + 1
             messages.append(self._build_assistant_message(ChatResponse(tool_calls=[
@@ -563,6 +752,9 @@ class ReActAgent:
             )
             result.steps.append(verify_step)
             result.tool_results.append(test_result)
+            result.tool_calls_count = tool_calls_count
+            result.verification_retries = retries
+            result.test_result = test_result.output
             if result.trace:
                 result.trace.add_step(
                     step=tool_calls_count,
@@ -586,6 +778,7 @@ class ReActAgent:
                 result.test_result = test_output
                 result.tool_calls_count = tool_calls_count
                 logger.info("Verification passed on attempt %d", retries + 1)
+                self._save_checkpoint(result, messages, result.trace, next_step="finish")
                 return result
 
             # Tests failed — record error event
@@ -607,6 +800,7 @@ class ReActAgent:
                 logger.warning(
                     "Verification failed after %d retries", self._verification.max_retries
                 )
+                self._save_checkpoint(result, messages, result.trace, next_step="finish")
                 return result
 
             # Inject test failure as Observation for agent to continue
@@ -628,7 +822,12 @@ class ReActAgent:
                 result.tool_calls_count = tool_calls_count
                 result.error_events = list(self._error_events)
                 logger.warning("Budget exhausted during verification")
+                self._save_checkpoint(result, messages, result.trace, next_step="finish")
                 return result
+
+            if self._checkpoint_state is not None:
+                self._checkpoint_state = self._checkpoint_state.model_copy(update={"verification_attempt": retries + 1})
+            self._save_checkpoint(result, messages, result.trace, next_step="repair", iteration=0)
 
             # Let the agent continue fixing
             continuation = await self._run_core(
@@ -638,15 +837,10 @@ class ReActAgent:
                 trace=result.trace,
                 active_skill=result.active_skill,
                 initial_context=initial_context,
+                prior_result=result,
             )
 
-            # Merge continuation into result
-            result.answer = continuation.answer
-            result.tool_calls_count = tool_calls_count + continuation.tool_calls_count
-            result.tool_results.extend(continuation.tool_results)
-            result.steps.extend(continuation.steps)
-            result.thoughts.extend(continuation.thoughts)
-            result.messages = continuation.messages
+            result = continuation
             result.error_events = list(self._error_events)
 
             retries += 1

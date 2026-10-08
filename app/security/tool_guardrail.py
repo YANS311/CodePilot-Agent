@@ -33,6 +33,16 @@ class ToolGuardrail:
     def warnings(self) -> list[dict]:
         return list(self._warnings)
 
+    def checkpoint_state(self) -> tuple[int, list[float]]:
+        return self._read_count, list(self._read_timestamps)
+
+    def restore_checkpoint_state(self, read_count: int, timestamps: list[float], warnings: list[dict]) -> None:
+        if read_count < 0 or any(not isinstance(value, (int, float)) for value in timestamps):
+            raise ValueError("Invalid guardrail checkpoint state")
+        self._read_count = read_count
+        self._read_timestamps = list(timestamps)
+        self._warnings = list(warnings)
+
     def check_prompt(self, task: str) -> GuardrailResult:
         """检查用户提示词是否包含注入攻击。"""
         result = analyze_prompt(task)

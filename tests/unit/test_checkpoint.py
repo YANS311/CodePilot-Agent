@@ -1,12 +1,11 @@
-from dataclasses import asdict
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic_core import PydanticSerializationError
 
 from app.agent.checkpoint import CheckpointBusy, CheckpointError, CheckpointManager, FileCheckpointStore
-from app.agent.checkpoint.manager import workspace_fingerprint
+from app.agent.checkpoint.manager import _linked_entry
 from app.agent.context import ContextManager
 from app.agent.trace import ExecutionTrace
 from app.agent.verification import VerificationPolicy
@@ -147,7 +146,7 @@ def test_known_secret_value_and_arbitrary_objects_are_not_serialized(setup):
     unsafe = state.model_copy(update={"messages": state.messages + [{"role": "assistant", "content": "confidential_value"}]})
     with pytest.raises(CheckpointError):
         store.save(unsafe)
-    with pytest.raises(Exception):
+    with pytest.raises(PydanticSerializationError):
         store.save(state.model_copy(update={"messages": [{"role": "system", "content": object()}]}))
     assert not list(store.root.glob("cp-*.json"))
 
@@ -191,3 +190,31 @@ def test_trace_cursor_restoration_and_validation(setup):
     invalid = state.model_copy(update={"trace": state.trace.model_copy(update={"next_event_id": 1})})
     with pytest.raises(ValueError):
         store.save(invalid)
+
+
+def test_terminal_snapshot_only_allows_append_only_rejection_trace(setup):
+    _, store, manager, state, _, trace = setup
+    saved = store.save(state.model_copy(update={"status": "completed", "next_step": "terminal"}))
+    with pytest.raises(CheckpointError, match="Terminal checkpoint"):
+        store.save(saved.model_copy(update={"resume_count": 1}))
+    with pytest.raises(CheckpointError, match="trace facts"):
+        store.save(saved.model_copy(update={"trace": saved.trace.model_copy(update={"status": "running-again"})}))
+    trace.restore_cursor(saved.trace.next_event_id)
+    trace.record_event("checkpoint_loaded")
+    trace.record_event("resume_rejected")
+    extended = store.save(saved.model_copy(update={"trace": manager.capture_trace(trace, reserve=0)}))
+    assert extended.result == saved.result
+    assert len(extended.trace.events) == len(saved.trace.events) + 2
+
+
+def test_mcp_or_shell_tools_never_gain_implicit_idempotency(setup):
+    _, _, manager, _, _, _ = setup
+    calls = manager.pending_calls([SimpleNamespace(id="external", name="mcp__server__write"), SimpleNamespace(id="shell", name="run_tests")])
+    assert all(call.replay_class == "side_effecting" for call in calls)
+
+
+def test_python311_windows_reparse_points_are_rejected():
+    junction = SimpleNamespace(is_symlink=lambda: False, lstat=lambda: SimpleNamespace(st_file_attributes=0x400))
+    regular = SimpleNamespace(is_symlink=lambda: False, lstat=lambda: SimpleNamespace(st_file_attributes=0))
+    assert _linked_entry(junction)
+    assert not _linked_entry(regular)

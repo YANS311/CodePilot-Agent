@@ -70,6 +70,14 @@ class WireMessage(ContractModel):
     tool_call_id: str | None = None
     tool_calls: list[AssistantCall] | None = None
 
+    @model_validator(mode="after")
+    def validate_role(self):
+        if self.tool_calls is not None and self.role != "assistant":
+            raise ValueError("Tool calls require assistant role")
+        if (self.role == "tool") != (self.tool_call_id is not None):
+            raise ValueError("Tool result IDs require tool role")
+        return self
+
 
 class PendingCall(ContractModel):
     id: str = Field(min_length=1, max_length=256)
@@ -125,6 +133,7 @@ class AgentCheckpoint(ContractModel):
     budget: ToolBudget
     drift_corrected: bool = False
     completion_corrected: bool = False
+    llm_request_prepared: bool = False
     completed_tool_ids: list[str] = Field(default_factory=list)
     last_completed_outcome: ToolResult | None = None
     in_flight: list[PendingCall] = Field(default_factory=list)
@@ -164,7 +173,7 @@ class AgentCheckpoint(ContractModel):
             WireMessage.model_validate(message)
         group_messages(self.messages)
         users = [message for message in self.messages if message["role"] == "user"]
-        if self.next_step != "initializing" and (not users or users[0]["content"] != self.task):
+        if self.next_step not in {"initializing", "terminal"} and (not users or users[0].get("content") != self.task):
             raise ValueError("Checkpoint does not preserve current task")
         if self.core_system is not None:
             expected = self.core_system + "\n\n" + "".join(self.optional_sections.get(n, "") for n in ("workspace", "memory", "skill"))
@@ -182,6 +191,8 @@ class AgentCheckpoint(ContractModel):
             raise ValueError("Invalid in-flight call identities")
         if bool(self.in_flight) != (self.status == "indeterminate"):
             raise ValueError("In-flight calls require indeterminate status")
+        if (self.status in TERMINAL_STATUSES) != (self.next_step == "terminal"):
+            raise ValueError("Terminal lifecycle/phase mismatch")
         previous = 0
         for event in self.trace.events:
             if event.task_id != self.task_id or event.step_id <= previous or event.schema_version != "0.1":
