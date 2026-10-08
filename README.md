@@ -80,6 +80,8 @@ graph TD
 - **Multi-Layer Task Suite**: 30 synthetic benchmarks + 15 real-world repository tasks + 10 stress/recovery test cases.
 - **Deterministic Replay**: Recorded `ExecutionTrace` trajectories allow exact replay and step-level regression debugging.
 - **Unified Trace Sink**: The versioned `TraceEvent` stream records routing, Skill selection, tool calls, verification, and completion under one task ID. In-memory and JSONL sinks support API inspection, durable replay, and future evaluator consumption while preserving legacy traces. See [`docs/trace_event.md`](docs/trace_event.md).
+- **Trace-Driven Evaluation**: `EvaluationRunner` supplies the benchmark task ID to the Agent and derives tool counts, verification attempts, and modified files from normalized trace events instead of parsing free-form observations.
+  Automatic verification is identified by event metadata; modified files are confirmed against the seed contents before workspace cleanup.
 
 ---
 

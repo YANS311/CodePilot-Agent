@@ -133,6 +133,8 @@ class TestVerificationTrigger:
             if event.agent_action == "tool_call"
         ]
         assert [event.tool_name for event in tool_events] == ["write_file", "run_tests"]
+        assert tool_events[-1].metadata["phase"] == "verification"
+        assert tool_events[-1].metadata["attempt"] == 1
         assert [event.step_id for event in result.trace.events] == list(
             range(1, len(result.trace.events) + 1)
         )
@@ -346,6 +348,15 @@ class TestMaxRetries:
         assert result.verification_retries == max_retries
         # Should have run tests max_retries + 1 times (initial + retries)
         assert test_call_count[0] == max_retries + 1
+        assert result.trace is not None
+        assert result.trace.status == "verification_failed"
+        assert result.trace.events[-1].agent_action == "task_complete"
+        assert result.trace.events[-1].execution_result == "verification_failed"
+        verification_events = [
+            event for event in result.trace.events
+            if event.metadata.get("phase") == "verification"
+        ]
+        assert [event.metadata["attempt"] for event in verification_events] == [1, 2, 3]
 
         # Check error events recorded
         verify_events = [e for e in result.error_events if e.module == "verification"]

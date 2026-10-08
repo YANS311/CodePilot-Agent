@@ -158,6 +158,7 @@ class ExecutionTrace:
         decision: str = "",
         error: Optional[str] = None,
         output: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """追加单步记录。"""
         snippet = output[:200] if output else ""
@@ -181,6 +182,7 @@ class ExecutionTrace:
             execution_result=status,
             duration_ms=latency_ms,
             metadata={
+                **(metadata or {}),
                 "decision": decision,
                 "error": error[:200] if error else None,
                 "legacy_step": step,
