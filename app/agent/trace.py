@@ -116,6 +116,17 @@ class ExecutionTrace:
     sink: Optional[TraceSink] = field(default=None, repr=False, compare=False)
     _next_event_id: int = field(default=1, init=False, repr=False, compare=False)
 
+    @property
+    def next_event_id(self) -> int:
+        return self._next_event_id
+
+    def restore_cursor(self, next_event_id: int) -> None:
+        """Advance past durable/reserved IDs without re-emitting historical events."""
+        minimum = max((event.step_id for event in self.events), default=0) + 1
+        if next_event_id < minimum:
+            raise ValueError("Trace cursor cannot precede restored events")
+        self._next_event_id = max(self._next_event_id, next_event_id)
+
     def record_event(
         self,
         agent_action: str,
