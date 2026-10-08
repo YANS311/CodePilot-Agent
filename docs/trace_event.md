@@ -36,6 +36,16 @@ while publishing these events to an optional `TraceSink`.
 - Automatic verification tool calls carry `metadata.phase = "verification"`
   and a one-based `metadata.attempt`. Ordinary Agent-initiated test calls do
   not increment the automatic verification retry count.
+- `context_build` records initial context assembly; `context_compaction` records
+  each successful pre-call budget check, including checks with no changes.
+  Metadata contains estimated tokens before/after, `tokens_saved`, retained
+  `compression_ratio` (after/before), messages before/after, retained tool outputs
+  compressed, dropped/truncated section names and `compaction_triggered`.
+  Compaction phase is `react`, `final_summary`, or `repo_analysis`. Context events
+  have no tool name/input/output, add no legacy tool step, and do not affect tool
+  counts, verification attempts, changed files, or terminal task outcomes.
+  No prompt, Memory text or observation contents are copied into these events.
+  See [Context Management](context_management.md) for estimate limitations.
 - `task_complete` records runtime termination (`completed`, `error`,
   `cancelled`, `budget_exhausted`, or `verification_failed`). `completed`
   alone does not establish benchmark task success; the evaluator runs its own tests.

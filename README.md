@@ -10,42 +10,36 @@
 
 ## 1. System Architecture
 
-CodePilot Agent decouples the orchestration harness from external capabilities and environment execution. Built-in tools and Model Context Protocol (MCP) servers share a polymorphic execution contract, while procedural domain workflows are dynamically injected via progressive Agent Skills.
+CodePilot Agent separates the orchestration/runtime/reliability harness from capability connectivity and environment execution. MCP is the connectivity layer, not the orchestration layer. Built-in tools and MCP servers share an execution contract; the Harness owns context selection, memory consumption, Skills, budgets, recovery, permissions and evaluation.
 
-```mermaid
-graph TD
-    User([User / FastAPI REST API]) --> AgentHarness[Agent Harness Orchestration]
-
-    subgraph AgentHarness[Agent Harness Core]
-        Router[Intent Router<br/>Rule / Embedding / LLM]
-        ReAct[ReAct Loop<br/>Think -> Act -> Observe]
-        SkillsMgr[Agent Skills Manager<br/>Progressive Disclosure Level 1-3]
-        Trace[Execution Trace & Observability]
-        PermPolicy[Permission Policy<br/>READ / WRITE / EXECUTE Boundary]
-        Registry[Unified Tool Registry]
-    end
-
-    Router --> ReAct
-    SkillsMgr -.->|On-Demand Injection| ReAct
-    ReAct --> Trace
-    ReAct --> PermPolicy
-    PermPolicy --> Registry
-
-    subgraph ToolRuntime[Unified Tool Runtime]
-        Registry --> BuiltInTools["Built-in Tools<br/>(search_code, read_file, write_file,<br/>code_edit, run_tests, git_diff, git_status)"]
-        Registry --> MCPAdapter["MCP Client & Adapter<br/>(JSON-RPC 2.0 via stdio)"]
-    end
-
-    subgraph ExecutionLayer[Sandboxed Execution Boundary]
-        BuiltInTools --> LocalRunner[Local Sandboxed Runner]
-        BuiltInTools --> DockerRunner[Docker Container Runner]
-        MCPAdapter --> ExternalMCPServers["External MCP Servers<br/>(@modelcontextprotocol/*, Community MCPs)"]
-    end
-
-    subgraph EvalFramework[Reproducible Evaluation Benchmark]
-        EvalRunner[Evaluation Runner] --> Metrics["Metrics Engine<br/>(Pass@1, TSR, Tool Efficiency, Latency, Tool Error Rate)"]
-        Replay[Replay Engine] --> EvalRunner
-    end
+```text
+User Task / FastAPI
+        |
+        v
+Agent Harness
+|-- Intent Router
+|-- Context Manager
+|   |-- Context Assembly
+|   |-- Token Budget
+|   `-- Deterministic Compaction
+|-- Hybrid Memory
+|   |-- Task Memory
+|   |-- Error Memory
+|   `-- Repository Memory
+|-- Agent Skills
+|-- ReAct Runtime
+|-- Tool Budget
+|-- Verification / Recovery
+|-- Permission Policy
+`-- Execution Trace / Evaluation
+        |
+        v
+Unified Tool Runtime (ToolRegistry)
+|-- Built-in Tools
+`-- MCP (capability connectivity)
+        |
+        v
+Local / Docker Execution; external MCP servers
 ```
 
 ---
@@ -53,9 +47,22 @@ graph TD
 ## 2. Core Capabilities
 
 ### 2.1 Agent Runtime & ReAct Loop
-- **Iterative Reasoning Loop**: Systematic `Think -> Act -> Observe` cycle with dynamic prompt budget control (`ToolBudget`).
+- **Iterative Reasoning Loop**: Systematic `Think -> Act -> Observe` cycle with tool-call limits (`ToolBudget`) and independent per-call context budgeting (`ContextManager`).
 - **Fake Tool Call & Completion Drift Recovery**: Real-time trajectory heuristic detection preventing hallucinated inline tool outputs or false "done" declarations without modifying code.
 - **Automated Self-Verification**: Post-write execution loop automatically triggers targeted test suites and injects test assertion failures back into context for iterative self-healing.
+
+#### Context Engineering
+- **Budgeted Assembly**: Mandatory system/safety instructions and the current task are preserved. Optional text is allocated in order: active Skill, retrieved Memory, Workspace/index.
+- **Deterministic Compaction**: Before ReAct calls, verification continuations, budget-exhaustion summaries and Harness repository analysis, oversized observations keep bounded head/tail evidence. Old history is evicted as logical groups; assistant tool calls and all corresponding results are never separated.
+- **Measured Estimates**: `context_build` / `context_compaction` events expose before/after estimates, saved estimates, retained ratio, message counts and section changes through the existing Trace Sink. No message contents are added to these events.
+- **Configuration**: `CODEPILOT_CONTEXT_MAX_INPUT_TOKENS=32768`, `CODEPILOT_CONTEXT_RESERVE_OUTPUT_TOKENS=4096`, `CODEPILOT_CONTEXT_TOOL_OUTPUT_LIMIT=2048`, `CODEPILOT_CONTEXT_RECENT_MESSAGE_COUNT=6`. The usable estimated input is the total envelope minus the output reservation; that reservation must cover `llm_max_tokens`.
+
+See [Context Management](docs/context_management.md) for exact algorithm, limits and configuration. Estimates include tool schemas and wire-message fields, but are not model billing tokens. Mandatory payloads that cannot fit raise an explicit error.
+
+#### Memory vs Context Management
+**Memory** decides what knowledge to store/retrieve across steps and tasks. Existing `HybridMemoryManager` remains authoritative for structured and vector-backed Task/Error/Repository Memory.
+
+**Context Manager** decides what the model sees in this specific call. It consumes retrieved Memory alongside Skills, Workspace and history; it does not create another Memory store, change retrieval, or replace the kernel's dependency-injection `AgentContext`.
 
 ### 2.2 Unified Tool System (Built-in + MCP)
 - **Polymorphic Contract**: All tools inherit from `BaseTool`, implementing `to_openai_schema()` and `run(workspace_root, **kwargs)`.
