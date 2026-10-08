@@ -7,42 +7,9 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from app.skills.models import SkillMetadata
-
-
-# 内置意图关键词规则表
-_SKILL_KEYWORD_RULES: Dict[str, List[str]] = {
-    "bug-fix": [
-        "bug", "fix", "repair", "defect", "failing", "fails", "failed",
-        "error", "exception", "broken", "issue", "crash", "wrong result",
-        "修复", "报错", "异常", "排查", "缺陷",
-    ],
-    "code-review": [
-        "review", "diff", "inspect", "audit", "security review", "pr",
-        "pull request", "refactor check", "code quality", "审查", "评审", "评估",
-    ],
-    "test-debugging": [
-        "test debug", "failing test", "flaky", "pytest", "unit test",
-        "test failure", "assert", "assertion", "traceback", "调试测试", "用例失败",
-    ],
-    "security-audit": [
-        "security audit", "vulnerability", "secret", "hardcoded", "sql injection",
-        "cwe", "owasp", "leak", "api key", "credentials", "xss", "csrf",
-        "安全审计", "漏洞", "敏感信息", "注入", "泄露", "弱点",
-    ],
-    "api-spec-validator": [
-        "api spec", "openapi", "rest api", "fastapi route", "route validation",
-        "schema validation", "endpoint contract", "status code", "pydantic model",
-        "接口规范", "路由校验", "契约", "接口文档",
-    ],
-    "git-workflow": [
-        "git workflow", "merge conflict", "rebase conflict", "conventional commit",
-        "git conflict", "branch hygiene", "changelog", "commit message",
-        "代码冲突", "合并冲突", "提交规范", "分支管理",
-    ],
-}
 
 
 def _contains_keyword(text: str, kw: str) -> bool:
@@ -84,9 +51,8 @@ class SkillSelector:
             if _contains_keyword(task_lower, skill_name) or _contains_keyword(task_lower, skill_name.replace("-", " ")):
                 score += 10
 
-            # 2. 规则关键词匹配
-            rules = _SKILL_KEYWORD_RULES.get(skill_name, [])
-            for kw in rules:
+            # 2. Skill 自声明触发词匹配
+            for kw in meta.trigger_keywords:
                 if _contains_keyword(task_lower, kw):
                     score += 2
 

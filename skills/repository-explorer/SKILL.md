@@ -8,6 +8,17 @@ tags:
   - entrypoint-discovery
   - call-chain
   - codebase-understanding
+trigger_keywords:
+  - explore repository
+  - understand codebase
+  - find entry point
+  - trace execution flow
+  - analyze codebase
+  - 分析代码库
+  - 梳理项目架构
+  - 找项目入口
+  - 分析调用链
+  - 接手项目
 ---
 
 # Procedural Knowledge: Repository Explorer & Codebase Onboarding

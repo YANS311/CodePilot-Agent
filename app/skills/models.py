@@ -20,6 +20,7 @@ class SkillMetadata:
     description: str
     path: str
     tags: List[str] = field(default_factory=list)
+    trigger_keywords: List[str] = field(default_factory=list)
     version: str = "1.0.0"
 
     def to_summary(self) -> str:

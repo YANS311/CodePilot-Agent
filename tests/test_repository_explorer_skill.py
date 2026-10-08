@@ -50,6 +50,7 @@ class TestRepositoryExplorerSkill:
         assert "entrypoint-discovery" in tags
         assert "call-chain" in tags
         assert "codebase-understanding" in tags
+        assert "understand codebase" in meta.get("trigger_keywords", [])
 
         # 验证 SOP 关键章节存在
         assert "Purpose" in body
@@ -77,6 +78,7 @@ class TestRepositoryExplorerSkill:
         assert meta is not None, "SkillManager failed to discover 'repository-explorer'"
         assert meta.name == "repository-explorer"
         assert "repo-exploration" in meta.tags
+        assert "梳理项目架构" in meta.trigger_keywords
         assert meta.version == "1.0.0"
 
         # 验证按需加载 Skill 正文
@@ -109,3 +111,7 @@ class TestRepositoryExplorerSkill:
         matched_by_tag = manager.match_and_load_for_task("Perform repo-exploration and call-chain mapping")
         assert matched_by_tag is not None
         assert matched_by_tag.name == "repository-explorer"
+
+        matched_by_trigger = manager.match_and_load_for_task("Help me understand codebase structure")
+        assert matched_by_trigger is not None
+        assert matched_by_trigger.name == "repository-explorer"
