@@ -207,6 +207,8 @@ class MCPRegistry:
     管理多个本地或远程 MCP Server 的配置、连接握手、工具发现与 BaseTool 挂载。
     """
 
+    provider_id = "mcp"
+
     def __init__(self) -> None:
         self._configs: Dict[str, MCPServerConfig] = {}
         self._clients: Dict[str, MCPClient] = {}
@@ -392,6 +394,10 @@ class MCPRegistry:
                 logger.error("Failed to connect to MCP server '%s': %s", name, exc)
         return all_tools
 
+    async def connect(self) -> List[MCPTool]:
+        """ExternalToolProvider lifecycle alias for MCP server discovery."""
+        return await self.connect_all()
+
     async def startup_restore(self, config_store: Optional[Any] = None) -> List[MCPTool]:
         """从持久化配置恢复 MCP Server 并建立连接。单个 Server 失败标记为 failed，不阻断其他 Server。"""
         if config_store is None:
@@ -418,20 +424,7 @@ class MCPRegistry:
         Returns:
             成功注入的工具数量。
         """
-        count = 0
-        for tool in self._tools.values():
-            try:
-                # 若已存在同名工具则先卸载或覆盖
-                if tool.name in tool_registry._tools:
-                    logger.warning("Overriding existing tool '%s' with MCP tool", tool.name)
-                    tool_registry._tools[tool.name] = tool
-                else:
-                    tool_registry.register(tool)
-                count += 1
-            except Exception as exc:
-                logger.warning("Failed to mount MCP tool '%s' to ToolRegistry: %s", tool.name, exc)
-        logger.info("Successfully mounted %d MCP tools to ToolRegistry", count)
-        return count
+        return tool_registry.mount_provider(self, replace=True)
 
     async def disconnect_server(self, name: str) -> None:
         """断开指定 MCP Server 连接并释放资源。"""
@@ -455,6 +448,10 @@ class MCPRegistry:
                 self._states[name].status = ServerStatus.DISCONNECTED
                 self._states[name].tool_count = 0
         self._tools.clear()
+
+    async def close(self) -> None:
+        """ExternalToolProvider lifecycle alias for MCP cleanup."""
+        await self.disconnect_all()
 
     def get_tools_metadata(self) -> List[Dict[str, Any]]:
         """导出所有 MCP 工具的元数据描述。"""

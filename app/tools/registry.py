@@ -6,6 +6,7 @@ from typing import Any
 
 from app.models.tool import ToolCall, ToolResult
 from app.tools.base import BaseTool
+from app.tools.provider import ExternalToolProvider
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -78,9 +79,11 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
 
-    def register(self, tool: BaseTool) -> None:
-        if tool.name in self._tools:
+    def register(self, tool: BaseTool, *, replace: bool = False) -> None:
+        if tool.name in self._tools and not replace:
             raise ValueError(f"工具 '{tool.name}' 已注册")
+        if tool.name in self._tools:
+            logger.warning("Replacing registered tool '%s'", tool.name)
         self._tools[tool.name] = tool
         logger.info("Tool registered: %s", tool.name)
 
@@ -112,8 +115,46 @@ class ToolRegistry:
                 })
         return results
 
+    def mount_provider(
+        self,
+        provider: ExternalToolProvider,
+        *,
+        replace: bool = False,
+    ) -> int:
+        """Mount a validated provider snapshot without partial registration."""
+        tools = list(provider.list_tools())
+        invalid = [tool for tool in tools if not isinstance(tool, BaseTool)]
+        if invalid:
+            raise TypeError(
+                f"provider '{provider.provider_id}' returned a non-BaseTool value"
+            )
+
+        names = [tool.name for tool in tools]
+        duplicate_names = sorted({name for name in names if names.count(name) > 1})
+        if duplicate_names:
+            raise ValueError(
+                f"provider '{provider.provider_id}' returned duplicate tools: "
+                + ", ".join(duplicate_names)
+            )
+
+        collisions = sorted(name for name in names if name in self._tools)
+        if collisions and not replace:
+            raise ValueError(
+                f"provider '{provider.provider_id}' conflicts with registered tools: "
+                + ", ".join(collisions)
+            )
+
+        for tool in tools:
+            self.register(tool, replace=replace)
+        logger.info(
+            "Mounted %d tools from provider '%s'", len(tools), provider.provider_id
+        )
+        return len(tools)
+
     def mount_mcp_registry(self, mcp_registry: Any) -> int:
-        """从 MCPRegistry 批量挂载工具。"""
+        """Backward-compatible MCP mounting through the provider boundary."""
+        if hasattr(mcp_registry, "list_tools") and hasattr(mcp_registry, "provider_id"):
+            return self.mount_provider(mcp_registry, replace=True)
         if hasattr(mcp_registry, "mount_to_tool_registry"):
             return mcp_registry.mount_to_tool_registry(self)
         return 0
