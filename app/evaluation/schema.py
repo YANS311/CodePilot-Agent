@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+from app.agent.trace import TraceEvent
 
 
 class EvalLayer(str, Enum):
@@ -97,6 +100,8 @@ class EvalResult:
     verification_retries: int = 0  # how many verification retries
     code_edit_used: bool = False  # was code_edit tool used?
     write_file_used: bool = False  # was write_file tool used?
+    # Normalized runtime events; authoritative when present.
+    trace_events: list[TraceEvent] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -111,28 +116,55 @@ class EvalResult:
             "failed": self.failed,
             "error_type": self.error_type,
             "error_reason": self.error_reason,
+            "files_modified": self.files_modified,
+            "verification_passed": self.verification_passed,
+            "verification_retries": self.verification_retries,
+            "code_edit_used": self.code_edit_used,
+            "write_file_used": self.write_file_used,
+            "trace_events": [event.to_dict() for event in self.trace_events],
         }
 
     def to_unified(self) -> dict:
         """Convert to AgentFinalOutput-compatible dict (D23)."""
         tools_used = []
         seen: set = set()
-        for s in self.steps:
-            if s.tool_name and s.tool_name not in seen:
-                seen.add(s.tool_name)
-                tools_used.append(s.tool_name)
-
         execution_trace = []
-        for s in self.steps:
-            execution_trace.append({
-                "step_id": len(execution_trace) + 1,
-                "action": s.observation[:200] if s.observation else "",
-                "tool": s.tool_name,
-                "input": "",
-                "output": s.observation[:500] if s.observation else "",
-                "success": s.success,
-                "duration_ms": 0,
-            })
+
+        if self.trace_events:
+            for event in self.trace_events:
+                if event.tool_name and event.tool_name not in seen:
+                    seen.add(event.tool_name)
+                    tools_used.append(event.tool_name)
+                tool_input = json.dumps(event.tool_input, ensure_ascii=False, default=str)
+                if isinstance(event.tool_output, str):
+                    tool_output = event.tool_output
+                else:
+                    tool_output = json.dumps(event.tool_output, ensure_ascii=False, default=str)
+                execution_trace.append({
+                    "step_id": event.step_id,
+                    "action": event.agent_action,
+                    "tool": event.tool_name or "",
+                    "input": tool_input,
+                    "output": tool_output,
+                    "success": event.execution_result not in {
+                        "error", "failed", "permission_blocked"
+                    },
+                    "duration_ms": int(event.duration_ms),
+                })
+        else:
+            for s in self.steps:
+                if s.tool_name and s.tool_name not in seen:
+                    seen.add(s.tool_name)
+                    tools_used.append(s.tool_name)
+                execution_trace.append({
+                    "step_id": len(execution_trace) + 1,
+                    "action": s.observation[:200] if s.observation else "",
+                    "tool": s.tool_name,
+                    "input": "",
+                    "output": s.observation[:500] if s.observation else "",
+                    "success": s.success,
+                    "duration_ms": 0,
+                })
 
         return {
             "mode": "eval",

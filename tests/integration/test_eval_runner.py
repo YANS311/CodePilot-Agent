@@ -78,6 +78,33 @@ class TestEvalResult:
         assert r.tool_calls_count == 0
         assert r.test_success is False
 
+    def test_to_unified_prefers_normalized_trace_events(self):
+        from app.agent.trace import TraceEvent
+
+        result = EvalResult(
+            task_id="t1",
+            trace_events=[
+                TraceEvent(task_id="t1", step_id=1, agent_action="task_start"),
+                TraceEvent(
+                    task_id="t1",
+                    step_id=2,
+                    agent_action="tool_call",
+                    tool_name="read_file",
+                    tool_input={"path": "app/main.py"},
+                    tool_output="contents",
+                    execution_result="success",
+                    duration_ms=4.8,
+                ),
+            ],
+        )
+
+        unified = result.to_unified()
+
+        assert len(unified["execution_trace"]) == 2
+        assert unified["execution_trace"][1]["input"] == '{"path": "app/main.py"}'
+        assert unified["execution_trace"][1]["duration_ms"] == 4
+        assert unified["tools_used"] == ["read_file"]
+
 
 # ═══════════════════════════════════════════
 # 3. tasks.json loading
@@ -293,6 +320,78 @@ class TestMetrics:
 
 
 class TestRunnerRunTask:
+    def test_trace_task_id_mismatch_is_rejected(self):
+        from app.agent.react_agent import AgentRunResult
+        from app.agent.trace import ExecutionTrace
+
+        trace = ExecutionTrace(task="fix", task_id="another-task")
+        trace.record_event("task_start", execution_result="started")
+
+        with pytest.raises(ValueError, match="trace task_id mismatch"):
+            EvaluationRunner._trace_events(
+                AgentRunResult(answer="", trace=trace),
+                "expected-task",
+            )
+
+    def test_run_task_uses_trace_as_metric_source(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.agent.react_agent import AgentRunResult
+        from app.agent.trace import ExecutionTrace
+        from app.execution.base import ExecutionResult
+
+        runner = EvaluationRunner()
+        runner._runner.run_pytest = AsyncMock(
+            return_value=ExecutionResult(success=True, passed=2, failed=0)
+        )
+        trace = ExecutionTrace(task="fix", task_id="trace-test")
+        trace.record_event("task_start", execution_result="started")
+        trace.add_step(
+            step=1,
+            tool_name="write_file",
+            arguments={"path": "examples/fix.py", "content": "fixed"},
+            status="success",
+            latency_ms=3.0,
+            output="written",
+        )
+        trace.add_step(
+            step=2,
+            tool_name="run_tests",
+            arguments={"target": "tests/test_fix.py"},
+            status="success",
+            latency_ms=5.0,
+            output='{"success": true}',
+        )
+        trace.record_event("task_complete", execution_result="completed")
+
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=AgentRunResult(
+            answer="fixed",
+            tool_calls_count=99,
+            trace=trace,
+        ))
+        task = EvalTask(
+            id="trace-test",
+            name="Trace Test",
+            task="fix",
+            difficulty="easy",
+            category="bug-fix",
+        )
+
+        result = asyncio.run(runner.run_task(
+            task,
+            lambda ws, max_calls=None, baseline=BaselineMode.REACT_FULL: mock_agent,
+        ))
+
+        assert result.tool_calls_count == 2
+        assert [record.tool_name for record in result.steps] == ["write_file", "run_tests"]
+        assert result.files_modified == ["examples/fix.py"]
+        assert result.write_file_used is True
+        assert result.verification_passed is True
+        assert len(result.trace_events) == 4
+        mock_agent.run.assert_awaited_once()
+        assert mock_agent.run.await_args.kwargs["task_id"] == "trace-test"
+
     def test_run_task_with_mock_agent(self):
         """用 mock agent 验证 run_task 的 workspace 隔离和结果收集。"""
         from unittest.mock import AsyncMock, MagicMock

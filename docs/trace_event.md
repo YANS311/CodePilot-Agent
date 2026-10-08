@@ -43,6 +43,8 @@ while publishing these events to an optional `TraceSink`.
 
 ## Migration Boundary
 
-The runtime now emits normalized routing, Skill selection, tool call, verification,
-and completion events. Existing `ExecutionStepTrace`, API response schemas, and
-whole-trace JSONL exports remain compatible. Evaluation migration is a separate step.
+The runtime emits normalized routing, Skill selection, tool call, verification,
+and completion events. `EvaluationRunner` passes its task ID into the Agent,
+validates event ownership, and derives tool, verification, and changed-file metrics
+from the event stream. Existing `ExecutionStepTrace`, API response schemas, and
+whole-trace JSONL exports remain compatible.

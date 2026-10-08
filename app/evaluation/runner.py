@@ -18,8 +18,15 @@ import shutil
 import time
 from pathlib import Path
 
+from app.agent.trace import TraceEvent
 from app.evaluation.analyzer import analyze_error
-from app.evaluation.schema import BaselineMode, EvalLayer, EvalResult, EvalTask
+from app.evaluation.schema import (
+    BaselineMode,
+    EvalLayer,
+    EvalResult,
+    EvalTask,
+    ToolCallRecord,
+)
 from app.execution.local_runner import LocalExecutionRunner
 from app.memory.memory_manager import get_memory_manager
 
@@ -106,6 +113,29 @@ class EvaluationRunner:
             + "\n\nUse the provided file and test target before broad searching."
         )
 
+    @staticmethod
+    def _trace_events(agent_result, task_id: str) -> list[TraceEvent]:
+        trace = getattr(agent_result, "trace", None)
+        events = list(getattr(trace, "events", []) or [])
+        mismatched = [event.task_id for event in events if event.task_id != task_id]
+        if mismatched:
+            raise ValueError(
+                f"trace task_id mismatch: expected {task_id!r}, got {mismatched[0]!r}"
+            )
+        return events
+
+    @staticmethod
+    def _record_from_event(event: TraceEvent) -> ToolCallRecord:
+        output = event.tool_output
+        if not isinstance(output, str):
+            output = json.dumps(output, ensure_ascii=False, default=str)
+        return ToolCallRecord(
+            tool_name=event.tool_name or "",
+            success=event.execution_result == "success",
+            output=output,
+            observation=output,
+        )
+
     async def run_task(
         self,
         task: EvalTask,
@@ -133,7 +163,10 @@ class EvaluationRunner:
             if baseline == BaselineMode.BARE_LLM:
                 agent_result = await self._run_bare_llm(agent, task)
             else:
-                agent_result = await agent.run(self._build_agent_prompt(task))
+                agent_result = await agent.run(
+                    self._build_agent_prompt(task),
+                    task_id=task.id,
+                )
             duration = int((time.monotonic() - t0) * 1000)
 
             # 用 Runner 验证：只运行任务相关的测试
@@ -141,15 +174,81 @@ class EvaluationRunner:
                 str(task_ws), target=task.test_target or None
             )
 
+            trace_events = self._trace_events(agent_result, task.id)
+            tool_events = [
+                event for event in trace_events
+                if event.agent_action == "tool_call" and event.tool_name
+            ]
+
+            if trace_events:
+                steps = [self._record_from_event(event) for event in tool_events]
+                tool_results = [self._record_from_event(event) for event in tool_events]
+                tool_calls_count = len(tool_events)
+            else:
+                steps = [
+                    ToolCallRecord(
+                        tool_name=step.tool_name or "",
+                        success=step.success,
+                        output=step.observation,
+                        observation=step.observation,
+                    )
+                    for step in getattr(agent_result, "steps", [])
+                ]
+                tool_results = [
+                    ToolCallRecord(
+                        tool_name=tool_result.name,
+                        success=tool_result.success,
+                        output=tool_result.output,
+                        observation=tool_result.output,
+                    )
+                    for tool_result in getattr(agent_result, "tool_results", [])
+                ]
+                tool_calls_count = agent_result.tool_calls_count
+
+            verification_events = [
+                event for event in tool_events if event.tool_name == "run_tests"
+            ]
+            modified_files = []
+            for event in tool_events:
+                if event.tool_name not in {"write_file", "code_edit"}:
+                    continue
+                path = event.tool_input.get("path")
+                if isinstance(path, str) and path and path not in modified_files:
+                    modified_files.append(path)
+
             eval_result = EvalResult(
                 task_id=task.id,
-                success=agent_result.tool_calls_count > 0 and test_result.success,
+                success=tool_calls_count > 0 and test_result.success,
                 final_answer=agent_result.answer,
-                tool_calls_count=agent_result.tool_calls_count,
+                tool_calls_count=tool_calls_count,
                 duration_ms=duration,
                 test_success=test_result.success,
                 passed=test_result.passed,
                 failed=test_result.failed,
+                steps=steps,
+                tool_results=tool_results,
+                files_modified=modified_files,
+                verification_passed=(
+                    verification_events[-1].execution_result == "success"
+                    if verification_events
+                    else (
+                        False
+                        if trace_events
+                        else getattr(agent_result, "verification_passed", False)
+                    )
+                ),
+                verification_retries=(
+                    max(0, len(verification_events) - 1)
+                    if verification_events
+                    else (
+                        0
+                        if trace_events
+                        else getattr(agent_result, "verification_retries", 0)
+                    )
+                ),
+                code_edit_used=any(event.tool_name == "code_edit" for event in tool_events),
+                write_file_used=any(event.tool_name == "write_file" for event in tool_events),
+                trace_events=trace_events,
             )
             # D32: track memory utilization
             try:
