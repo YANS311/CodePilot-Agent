@@ -106,6 +106,10 @@ flowchart LR
 - **5. Agent 消费 (Agent Execution)**: `ReActAgent` fetches unified OpenAI Function Calling schemas via `ToolRegistry.get_schemas()` and executes calls during the ReAct loop.
 - **6. 安全拦截 (Security Enforcement)**: Every MCP tool invocation remains strictly guarded by `PermissionPolicy`, `ToolGuardrail`, and parameter boundaries.
 
+### External Tool Provider Boundary
+
+`ToolRegistry` depends on the structural `ExternalToolProvider` contract rather than MCP internals. A provider exposes `provider_id`, `connect()`, `list_tools()`, and `close()`; `MCPRegistry` is the first implementation. Native tools continue to use `register()`, while future Remote API adapters can join through `mount_provider()` without changing the Agent loop. Provider snapshots are validated before mounting, and external tools cannot replace existing names unless the caller explicitly enables replacement. The legacy `mount_mcp_registry()` entry point remains compatible.
+
 ### MCP Server Lifecycle & Persistence
 
 CodePilot Agent supports a dual-tier configuration and lifecycle model to balance static developer presets with dynamic runtime registrations:
