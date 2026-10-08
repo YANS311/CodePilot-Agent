@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from app.evaluation.metrics import compute_metrics
 from app.evaluation.runner import EvaluationRunner
+from app.evaluation.trace_metrics_backend import optional_go_summary
 
 
 def task_metrics(result):
@@ -22,7 +23,7 @@ def task_metrics(result):
     usage_present = bool(usage) and len(usage) == len(requests) and all(
         "prompt_tokens" in item and "completion_tokens" in item for item in usage)
     ratios = [e.metadata["compression_ratio"] for e in context if "compression_ratio" in e.metadata]
-    return {
+    metrics = {
         "success": result.success, "terminal_status": terminal,
         "executed_tool_calls": len(tools),
         "duplicate_read_search_calls": sum(n - 1 for n in counts.values()),
@@ -43,6 +44,8 @@ def task_metrics(result):
         "provider_output_tokens": sum(u["completion_tokens"] for u in usage) if usage_present else None,
         "files_modified": result.files_modified,
     }
+    metrics.update(optional_go_summary(result.task_id, events, metrics))
+    return metrics
 
 
 def aggregate(results, tasks, measurements, *, simulated):
