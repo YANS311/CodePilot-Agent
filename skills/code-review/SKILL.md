@@ -3,6 +3,7 @@ name: code-review
 description: Perform comprehensive code quality, security, and regression review on git diffs or target files.
 version: 1.0.0
 tags: [review, diff, security, code-quality]
+trigger_keywords: [review, diff, inspect, audit, security review, pr, pull request, refactor check, code quality, 审查, 评审, 评估]
 ---
 
 # Procedural Knowledge: Code Review Workflow

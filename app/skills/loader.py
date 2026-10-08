@@ -21,6 +21,15 @@ class SkillLoader:
     """Skill 规范加载器。"""
 
     @staticmethod
+    def _normalize_string_list(value: Any) -> List[str]:
+        """Normalize scalar or sequence frontmatter values into clean strings."""
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
     def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
         """解析 SKILL.md 顶部的 YAML Frontmatter。
         
@@ -74,7 +83,7 @@ class SkillLoader:
             logger.debug("Skills directory '%s' does not exist", skills_dir)
             return metadata_map
 
-        for item in dir_path.iterdir():
+        for item in sorted(dir_path.iterdir(), key=lambda path: path.name):
             if not item.is_dir():
                 continue
             skill_file = item / "SKILL.md"
@@ -86,9 +95,10 @@ class SkillLoader:
                 frontmatter, _ = cls.parse_frontmatter(content)
                 name = frontmatter.get("name", item.name)
                 description = frontmatter.get("description", f"Procedural skill for {name}")
-                tags = frontmatter.get("tags", [])
-                if isinstance(tags, str):
-                    tags = [tags]
+                tags = cls._normalize_string_list(frontmatter.get("tags", []))
+                trigger_keywords = cls._normalize_string_list(
+                    frontmatter.get("trigger_keywords", [])
+                )
                 version = str(frontmatter.get("version", "1.0.0"))
 
                 metadata = SkillMetadata(
@@ -96,6 +106,7 @@ class SkillLoader:
                     description=description,
                     path=str(skill_file.resolve()),
                     tags=tags,
+                    trigger_keywords=trigger_keywords,
                     version=version,
                 )
                 metadata_map[name] = metadata

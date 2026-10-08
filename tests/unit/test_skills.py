@@ -22,6 +22,7 @@ name: sample-skill
 description: A sample procedural skill
 version: 1.2.0
 tags: [demo, test]
+trigger_keywords: [sample task, 示例任务]
 ---
 # Step 1: Do something
 Execute carefully.
@@ -30,6 +31,7 @@ Execute carefully.
         assert meta["name"] == "sample-skill"
         assert meta["description"] == "A sample procedural skill"
         assert meta["version"] == "1.2.0"
+        assert meta["trigger_keywords"] == ["sample task", "示例任务"]
         assert "Step 1: Do something" in body
 
     def test_parse_malformed_frontmatter_fallback(self):
@@ -54,6 +56,7 @@ Execute carefully.
         bug_fix = skills["bug-fix"]
         assert bug_fix.name == "bug-fix"
         assert "defect" in bug_fix.description.lower() or "fix" in bug_fix.description.lower()
+        assert "failing" in bug_fix.trigger_keywords
 
     def test_load_level3_resources(self):
         skills_dir = PROJECT_ROOT / "skills"
@@ -73,6 +76,35 @@ Execute carefully.
 
 
 class TestSkillSelectorAndProgressiveDisclosure:
+    def test_custom_skill_routes_from_frontmatter_metadata(self):
+        metadata = SkillMetadata(
+            name="custom-workflow",
+            description="A custom workflow",
+            path="skills/custom-workflow/SKILL.md",
+            trigger_keywords=["frobnicate workspace"],
+        )
+
+        selected = SkillSelector.select_skill(
+            "Please frobnicate workspace before delivery",
+            {metadata.name: metadata},
+        )
+
+        assert selected is metadata
+
+    def test_selector_has_no_hidden_skill_name_rules(self):
+        metadata = SkillMetadata(
+            name="bug-fix",
+            description="A workflow without routing metadata",
+            path="skills/bug-fix/SKILL.md",
+        )
+
+        selected = SkillSelector.select_skill(
+            "Repair the failing behavior",
+            {metadata.name: metadata},
+        )
+
+        assert selected is None
+
     def test_skill_selection_bug_fix(self):
         skills_dir = PROJECT_ROOT / "skills"
         mgr = SkillManager(skills_dir=skills_dir)

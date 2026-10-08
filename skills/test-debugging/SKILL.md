@@ -3,6 +3,7 @@ name: test-debugging
 description: Isolate flaky or failing tests, analyze stack traces, and systematically eliminate test failures.
 version: 1.0.0
 tags: [testing, debugging, pytest, failure-isolation]
+trigger_keywords: [test debug, failing test, flaky, pytest, unit test, test failure, assert, assertion, traceback, 调试测试, 用例失败]
 ---
 
 # Procedural Knowledge: Test Debugging Workflow

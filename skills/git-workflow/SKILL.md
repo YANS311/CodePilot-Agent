@@ -3,6 +3,7 @@ name: git-workflow
 description: Automate conventional commit formatting, branch conflict detection, and git hygiene.
 version: 1.0.0
 tags: [git, commit, conflict, branch, rebase, merge, changelog]
+trigger_keywords: [git workflow, merge conflict, rebase conflict, conventional commit, git conflict, branch hygiene, changelog, commit message, 代码冲突, 合并冲突, 提交规范, 分支管理]
 ---
 
 # Procedural Knowledge: Git Workflow & Conflict Resolution

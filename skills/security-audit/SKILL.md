@@ -3,6 +3,7 @@ name: security-audit
 description: Audit source code for security vulnerabilities, hardcoded secrets, SQL injection, and path traversal defects.
 version: 1.1.0
 tags: [security, audit, vulnerability, cwe, owasp, secrets, injection]
+trigger_keywords: [security audit, vulnerability, secret, hardcoded, sql injection, cwe, owasp, leak, api key, credentials, xss, csrf, 安全审计, 漏洞, 敏感信息, 注入, 泄露, 弱点]
 ---
 
 # Procedural Knowledge: Security & Vulnerability Audit Workflow

@@ -3,6 +3,7 @@ name: bug-fix
 description: Diagnose and fix reproducible software defects following systematic verification.
 version: 1.0.0
 tags: [debugging, bug-fix, repair, verification]
+trigger_keywords: [bug, fix, repair, defect, failing, fails, failed, error, exception, broken, issue, crash, wrong result, 修复, 报错, 异常, 排查, 缺陷]
 ---
 
 # Procedural Knowledge: Bug Fixing Workflow

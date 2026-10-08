@@ -3,6 +3,7 @@ name: api-spec-validator
 description: Validate FastAPI and REST API endpoints against OpenAPI schemas, HTTP semantics, and Pydantic model contracts.
 version: 1.0.0
 tags: [api, fastapi, rest, validation, openapi, schema, contract]
+trigger_keywords: [api spec, openapi, rest api, fastapi route, route validation, schema validation, endpoint contract, status code, pydantic model, 接口规范, 路由校验, 契约, 接口文档]
 ---
 
 # Procedural Knowledge: API & Route Specification Validation

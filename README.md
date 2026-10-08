@@ -152,6 +152,7 @@ name: bug-fix
 description: Diagnose and fix reproducible software defects following systematic verification.
 version: 1.0.0
 tags: [debugging, bug-fix, verification]
+trigger_keywords: [bug, fix, failing test, error, 修复, 报错]
 ---
 
 # Procedural Knowledge: Bug Fixing Workflow
@@ -162,7 +163,7 @@ tags: [debugging, bug-fix, verification]
 5. Regression Check: Inspect git_diff.
 ```
 
-The `SkillManager` automatically indexes Level 1 metadata and loads Level 2 instructions when a bug-fix task is dispatched:
+The `SkillManager` automatically indexes Level 1 metadata and loads Level 2 instructions when a task matches the Skill name, tags, or self-declared `trigger_keywords`. New routing vocabulary belongs in `SKILL.md`; the Python selector does not maintain a per-Skill keyword table.
 
 ```python
 from app.skills.manager import skill_manager
