@@ -32,7 +32,13 @@ while publishing these events to an optional `TraceSink`.
   later, but this draft does not define parent-child relationships yet.
 - Tool output must be sanitized and size-limited before persistent storage.
 - Skills remain procedural instructions and do not emit or execute tools by
-  themselves. Skill selection will become a trace event in a later PR.
+  themselves. The runtime records the selection as a `skill_selection` event.
+- Automatic verification tool calls carry `metadata.phase = "verification"`
+  and a one-based `metadata.attempt`. Ordinary Agent-initiated test calls do
+  not increment the automatic verification retry count.
+- `task_complete` records runtime termination (`completed`, `error`,
+  `cancelled`, `budget_exhausted`, or `verification_failed`). `completed`
+  alone does not establish benchmark task success; the evaluator runs its own tests.
 
 ## Trace Sinks
 
@@ -46,5 +52,6 @@ while publishing these events to an optional `TraceSink`.
 The runtime emits normalized routing, Skill selection, tool call, verification,
 and completion events. `EvaluationRunner` passes its task ID into the Agent,
 validates event ownership, and derives tool, verification, and changed-file metrics
-from the event stream. Existing `ExecutionStepTrace`, API response schemas, and
+from the event stream. Changed-file candidates must also differ from the seed
+workspace on disk. Existing `ExecutionStepTrace`, API response schemas, and
 whole-trace JSONL exports remain compatible.

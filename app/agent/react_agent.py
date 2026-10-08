@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -165,6 +166,18 @@ class ReActAgent:
         """执行一个编码任务，返回最终结果。"""
         trace = ExecutionTrace(task=task, task_id=task_id or uuid.uuid4().hex, sink=self._trace_sink)
         trace.record_event("task_start", execution_result="started")
+        try:
+            return await self._run_task(task, trace)
+        except (Exception, asyncio.CancelledError) as exc:
+            trace.status = "error"
+            trace.record_event(
+                "task_complete",
+                execution_result="cancelled" if isinstance(exc, asyncio.CancelledError) else "error",
+                metadata={"error_type": type(exc).__name__},
+            )
+            raise
+
+    async def _run_task(self, task: str, trace: ExecutionTrace) -> AgentRunResult:
 
         # Prompt Injection 检查
         prompt_result = self._guardrail.check_prompt(task)
@@ -247,6 +260,8 @@ class ReActAgent:
         # ── Self-Verification Loop ──
         if self._verification.enabled and result.wrote_file:
             result = await self._verify(task, result, messages, tools_schema)
+            if not result.verification_passed:
+                trace.status = "verification_failed"
 
         if trace.status == "running":
             trace.status = "completed"
@@ -520,6 +535,7 @@ class ReActAgent:
                     decision="[verification] Running tests after write_file",
                     error=test_result.output if not test_result.success else None,
                     output=test_result.output,
+                    metadata={"phase": "verification", "attempt": retries + 1},
                 )
 
             # Parse test result

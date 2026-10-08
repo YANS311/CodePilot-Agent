@@ -122,7 +122,38 @@ class EvaluationRunner:
             raise ValueError(
                 f"trace task_id mismatch: expected {task_id!r}, got {mismatched[0]!r}"
             )
+        step_ids = [event.step_id for event in events]
+        if any(current <= previous for previous, current in zip(step_ids, step_ids[1:])):
+            raise ValueError("trace step_id must be strictly increasing")
         return events
+
+    def _modified_files(self, workspace: Path, tool_events: list[TraceEvent]) -> list[str]:
+        """Confirm successful edit events against the final workspace contents."""
+        changed: set[str] = set()
+        workspace_root = workspace.resolve()
+        seed_root = self._seed.resolve()
+        for event in tool_events:
+            if event.tool_name not in {"write_file", "code_edit"}:
+                continue
+            if event.execution_result != "success":
+                continue
+            path = event.tool_input.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            target = (workspace_root / path).resolve()
+            try:
+                relative_path = target.relative_to(workspace_root)
+                original = (seed_root / relative_path).resolve()
+                original.relative_to(seed_root)
+            except ValueError:
+                continue
+            if not target.is_file():
+                continue
+            if not original.exists() or (
+                original.is_file() and target.read_bytes() != original.read_bytes()
+            ):
+                changed.add(relative_path.as_posix())
+        return sorted(changed)
 
     @staticmethod
     def _record_from_event(event: TraceEvent) -> ToolCallRecord:
@@ -206,15 +237,11 @@ class EvaluationRunner:
                 tool_calls_count = agent_result.tool_calls_count
 
             verification_events = [
-                event for event in tool_events if event.tool_name == "run_tests"
+                event for event in tool_events
+                if event.tool_name == "run_tests"
+                and event.metadata.get("phase") == "verification"
             ]
-            modified_files = []
-            for event in tool_events:
-                if event.tool_name not in {"write_file", "code_edit"}:
-                    continue
-                path = event.tool_input.get("path")
-                if isinstance(path, str) and path and path not in modified_files:
-                    modified_files.append(path)
+            modified_files = self._modified_files(task_ws, tool_events)
 
             eval_result = EvalResult(
                 task_id=task.id,
@@ -246,8 +273,8 @@ class EvaluationRunner:
                         else getattr(agent_result, "verification_retries", 0)
                     )
                 ),
-                code_edit_used=any(event.tool_name == "code_edit" for event in tool_events),
-                write_file_used=any(event.tool_name == "write_file" for event in tool_events),
+                code_edit_used=any(step.tool_name == "code_edit" for step in steps),
+                write_file_used=any(step.tool_name == "write_file" for step in steps),
                 trace_events=trace_events,
             )
             # D32: track memory utilization

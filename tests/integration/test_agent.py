@@ -43,6 +43,27 @@ def _mock_llm(responses: list[ChatResponse]) -> LLMClient:
 
 
 class TestAgentDirectAnswer:
+    @pytest.mark.parametrize("error", [RuntimeError("LLM unavailable"), asyncio.CancelledError()])
+    def test_exception_closes_trace_and_propagates(self, error):
+        from types import SimpleNamespace
+
+        llm = _mock_llm([])
+        llm.chat = AsyncMock(side_effect=error)
+        sink = InMemoryTraceSink()
+        agent = ReActAgent(llm, _make_registry(), WORKSPACE, trace_sink=sink)
+        route = SimpleNamespace(intent="react", layer="rule")
+        with patch("app.agent.react_agent.get_intent_router") as router:
+            router.return_value.route.return_value = route
+            with pytest.raises(type(error)):
+                asyncio.run(agent.run("Explain dependency injection", task_id="failed-run"))
+
+        events = sink.snapshot()
+        assert events[-1].agent_action == "task_complete"
+        assert events[-1].execution_result == (
+            "cancelled" if isinstance(error, asyncio.CancelledError) else "error"
+        )
+        assert all(event.task_id == "failed-run" for event in events)
+
     def test_direct_answer(self):
         """LLM 不调用工具，直接给出回答。"""
         llm = _mock_llm([

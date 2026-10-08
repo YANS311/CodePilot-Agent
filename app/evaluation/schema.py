@@ -147,7 +147,8 @@ class EvalResult:
                     "input": tool_input,
                     "output": tool_output,
                     "success": event.execution_result not in {
-                        "error", "failed", "permission_blocked"
+                        "error", "failed", "permission_blocked",
+                        "verification_failed", "budget_exhausted", "cancelled",
                     },
                     "duration_ms": int(event.duration_ms),
                 })

@@ -133,6 +133,8 @@ class TestVerificationTrigger:
             if event.agent_action == "tool_call"
         ]
         assert [event.tool_name for event in tool_events] == ["write_file", "run_tests"]
+        assert tool_events[-1].metadata["phase"] == "verification"
+        assert tool_events[-1].metadata["attempt"] == 1
         assert [event.step_id for event in result.trace.events] == list(
             range(1, len(result.trace.events) + 1)
         )
