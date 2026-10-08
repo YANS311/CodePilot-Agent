@@ -57,6 +57,13 @@ def clip_text(text: str, limit: int, estimator: TokenEstimator, *, tool_name: st
     """Keep deterministic head/tail evidence; measure the marker within the cap."""
     if estimator.estimate_text(text) <= limit:
         return text
+
+    def cost(candidate: str) -> int:
+        # Markers add newlines/quotes which also consume space after JSON escaping.
+        return max(
+            estimator.estimate_text(candidate),
+            estimator.estimate_text(json.dumps(candidate, ensure_ascii=False)),
+        )
     status = "unknown"
     if tool_name:
         try:
@@ -78,12 +85,12 @@ def clip_text(text: str, limit: int, estimator: TokenEstimator, *, tool_name: st
             f"\nhead:\n{head}\ntail:\n{tail}"
         )
 
-    if estimator.estimate_text(render(0)) > limit:
-        return "[compacted]" if estimator.estimate_text("[compacted]") <= limit else ""
+    if cost(render(0)) > limit:
+        return "[compacted]" if cost("[compacted]") <= limit else ""
     low, high = 0, len(text)
     while low < high:
         mid = (low + high + 1) // 2
-        if estimator.estimate_text(render(mid)) <= limit:
+        if cost(render(mid)) <= limit:
             low = mid
         else:
             high = mid - 1

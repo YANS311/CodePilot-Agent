@@ -78,3 +78,5 @@ class ContextStats:
 class ContextBuildResult:
     messages: list[dict[str, Any]]
     stats: ContextStats
+    core_system: str | None = None
+    optional_sections: dict[str, str] = field(default_factory=dict)

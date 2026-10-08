@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
+from app.agent.context import ContextBudget, ContextBuildResult, ContextManager
 from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.trace import ExecutionStepTrace, ExecutionTrace, TraceSink
@@ -20,6 +21,7 @@ from app.security.permission import PermissionPolicy
 from app.security.tool_guardrail import ToolGuardrail
 from app.skills.manager import SkillManager, skill_manager
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
+from app.core.config import settings
 from app.models.tool import AgentStep, ToolCall, ToolResult
 from app.tools.registry import ToolRegistry
 from app.workspace.indexer import IndexBuilder, WorkspaceIndex
@@ -145,6 +147,7 @@ class ReActAgent:
         permission_policy: PermissionPolicy | None = None,
         skill_manager_instance: SkillManager | None = None,
         trace_sink: TraceSink | None = None,
+        context_manager: ContextManager | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -157,6 +160,12 @@ class ReActAgent:
         self._permission_policy = permission_policy or PermissionPolicy.standard_coding()
         self._skill_manager = skill_manager_instance or skill_manager
         self._trace_sink = trace_sink
+        self._context_manager = context_manager or ContextManager(ContextBudget(
+            max_input_tokens=settings.context_max_input_tokens,
+            reserve_output_tokens=settings.context_reserve_output_tokens,
+            tool_observation_budget=settings.context_tool_output_limit,
+            recent_message_count=settings.context_recent_message_count,
+        ))
         self._index: Optional[WorkspaceIndex] = None
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
@@ -224,7 +233,7 @@ class ReActAgent:
 
         # REPO intent → repo analysis mode
         if intent_result.intent == INTENT_REPO:
-            result = await self._run_repo_mode(task)
+            result = await self._run_repo_mode(task, trace=trace)
             trace.status = "completed"
             trace.record_event("task_complete", execution_result="success")
             result.trace = trace
@@ -246,20 +255,20 @@ class ReActAgent:
         index_context = self._build_index_context()
         mem_ctx = self._build_memory_context(task)
 
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT + "\n\n" + index_context + mem_ctx + skill_prompt_section,
-            },
-            {"role": "user", "content": task},
-        ]
-
         tools_schema = self._registry.get_schemas()
-        result = await self._run_core(task, messages, tools_schema, trace=trace, active_skill=active_skill_name)
+        initial = self._context_manager.build_initial_context(
+            system=SYSTEM_PROMPT, task=task, workspace=index_context,
+            memory=mem_ctx, skill=skill_prompt_section, tools=tools_schema,
+        )
+        messages = initial.messages
+        trace.record_event("context_build", execution_result="success", metadata=initial.stats.to_metadata())
+        result = await self._run_core(
+            task, messages, tools_schema, trace=trace, active_skill=active_skill_name, initial_context=initial,
+        )
 
         # ── Self-Verification Loop ──
         if self._verification.enabled and result.wrote_file:
-            result = await self._verify(task, result, messages, tools_schema)
+            result = await self._verify(task, result, messages, tools_schema, initial_context=initial)
             if not result.verification_passed:
                 trace.status = "verification_failed"
 
@@ -278,6 +287,7 @@ class ReActAgent:
         tools_schema: list[dict],
         trace: Optional[ExecutionTrace] = None,
         active_skill: Optional[str] = None,
+        initial_context: ContextBuildResult | None = None,
     ) -> AgentRunResult:
         """Core agent loop — Think → Act → Observe.
 
@@ -294,9 +304,7 @@ class ReActAgent:
             if budget_prompt:
                 messages.append({"role": "system", "content": budget_prompt})
 
-            response: ChatResponse = await self._llm.chat(
-                messages, tools=tools_schema if tools_schema else None
-            )
+            response = await self._chat_with_context(messages, tools_schema, trace, initial_context=initial_context)
 
             if not response.has_tool_calls:
                 answer = response.content or ""
@@ -367,7 +375,12 @@ class ReActAgent:
             for tc_info in response.tool_calls:
                 if self._budget.should_stop():
                     logger.warning("Budget exhausted, stopping tool calls")
-                    break
+                    # Every requested call needs a result, even when not executed.
+                    messages.append({
+                        "role": "tool", "tool_call_id": tc_info.id,
+                        "content": "Tool not executed: tool budget exhausted.",
+                    })
+                    continue
 
                 tool_calls_count += 1
                 self._budget.consume()
@@ -455,7 +468,9 @@ class ReActAgent:
                 break
 
         # Budget exhausted: ask LLM to summarize
-        final_response = await self._llm.chat(messages)
+        final_response = await self._chat_with_context(
+            messages, None, trace, phase="final_summary", initial_context=initial_context,
+        )
         has_write = self._has_write_file_in_trajectory(steps)
         is_code_mod = self._is_code_modification_task(task)
         no_reason = ""
@@ -481,12 +496,29 @@ class ReActAgent:
             trace=trace,
         )
 
+    async def _chat_with_context(
+        self, messages: list[dict[str, Any]], tools: list[dict] | None,
+        trace: ExecutionTrace | None, *, phase: str = "react",
+        initial_context: ContextBuildResult | None = None,
+    ) -> ChatResponse:
+        prepared = self._context_manager.compact_messages(messages, tools=tools, initial_context=initial_context)
+        messages[:] = prepared.messages
+        if initial_context is not None:
+            initial_context.optional_sections = prepared.optional_sections
+        if trace is not None:
+            trace.record_event(
+                "context_compaction", execution_result="success",
+                metadata={"phase": phase, **prepared.stats.to_metadata()},
+            )
+        return await self._llm.chat(messages, tools=tools or None)
+
     async def _verify(
         self,
         task: str,
         result: AgentRunResult,
         messages: list[dict[str, Any]],
         tools_schema: list[dict],
+        *, initial_context: ContextBuildResult | None = None,
     ) -> AgentRunResult:
         """Post-write verification loop: run tests, retry on failure.
 
@@ -512,6 +544,12 @@ class ReActAgent:
             )
             verify_latency = (time.perf_counter() - verify_started) * 1000.0
             tool_calls_count = result.tool_calls_count + 1
+            messages.append(self._build_assistant_message(ChatResponse(tool_calls=[
+                ToolCallInfo(id=test_tc.id, name=test_tc.name, arguments=test_tc.arguments),
+            ])))
+            messages.append({
+                "role": "tool", "tool_call_id": test_tc.id, "content": test_result.output,
+            })
 
             # Record verification step
             verify_step = AgentStep(
@@ -576,7 +614,7 @@ class ReActAgent:
             messages.append({
                 "role": "system",
                 "content": (
-                    f"[自动验证] 测试未通过:\n{test_output}\n\n"
+                    "[自动验证] 测试未通过，失败信息见上面的 run_tests 结果。\n"
                     "请根据测试失败信息继续修复代码。"
                 ),
             })
@@ -599,6 +637,7 @@ class ReActAgent:
                 tools_schema,
                 trace=result.trace,
                 active_skill=result.active_skill,
+                initial_context=initial_context,
             )
 
             # Merge continuation into result
@@ -617,7 +656,7 @@ class ReActAgent:
         result.verification_retries = retries
         return result
 
-    async def _run_repo_mode(self, task: str) -> AgentRunResult:
+    async def _run_repo_mode(self, task: str, trace: ExecutionTrace | None = None) -> AgentRunResult:
         """REPO_MODE：分析整个项目结构。"""
         from app.agent.repo_analyzer import RepoAnalyzer
 
@@ -631,7 +670,10 @@ class ReActAgent:
                 thoughts=["REPO_MODE: workspace 为空"],
             )
 
-        analyzer = RepoAnalyzer(llm=self._llm, index=self._index)
+        analyzer = RepoAnalyzer(
+            llm=self._llm, index=self._index, context_manager=self._context_manager,
+            trace=trace, task=task,
+        )
         analysis = await analyzer.analyze()
 
         # 格式化输出

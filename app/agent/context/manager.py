@@ -60,10 +60,11 @@ class ContextManager:
         return ContextBuildResult(messages, ContextStats(
             before, self.estimator.estimate_messages(messages, tools), 2, 2,
             context_sections_dropped=tuple(dropped), context_sections_truncated=tuple(truncated),
-        ))
+        ), core_system=system, optional_sections=chosen)
 
     def compact_messages(
         self, messages: list[dict[str, Any]], *, tools: list[dict] | None = None,
+        initial_context: ContextBuildResult | None = None,
     ) -> ContextBuildResult:
         groups = group_messages(messages)
         working = deepcopy(messages)
@@ -74,8 +75,13 @@ class ContextManager:
         protected = set(users[:1] + users[-1:] + systems[:1] + systems[-1:])
         if groups:
             protected.update(groups[-1].indices)
+        latest_tool_group = next((group for group in reversed(groups) if group.tool_names), None)
+        if latest_tool_group is not None:
+            protected.update(latest_tool_group.indices)
         compressed: set[int] = set()
         truncated: set[str] = set()
+        dropped: set[str] = set()
+        sections = dict(initial_context.optional_sections) if initial_context else {}
         for group in groups:
             for i in group.indices:
                 message = working[i]
@@ -117,12 +123,50 @@ class ContextManager:
         for group in candidates:
             if fits():
                 break
-            if protected.intersection(group.indices):
+            if protected.intersection(group.indices) or max(group.indices) >= recent_start:
                 continue
             retained.difference_update(group.indices)
 
+        # Reclaim optional initial sections before evicting recent tool evidence.
+        if initial_context is not None and initial_context.core_system is not None and first_system is not None:
+            def update_system() -> None:
+                working[first_system]["content"] = initial_context.core_system + "\n\n" + "".join(
+                    sections.get(name, "") for name in ("workspace", "memory", "skill")
+                )
+
+            for name in ("workspace", "memory", "skill"):
+                if fits():
+                    break
+                original = sections.get(name, "")
+                if not original:
+                    continue
+                sections[name] = ""
+                update_system()
+                if fits():
+                    low, high = 0, self.estimator.estimate_text(original)
+                    while low < high:
+                        mid = (low + high + 1) // 2
+                        sections[name] = clip_text(original, mid, self.estimator)
+                        update_system()
+                        if fits():
+                            low = mid
+                        else:
+                            high = mid - 1
+                    sections[name] = clip_text(original, low, self.estimator)
+                    update_system()
+                if not sections[name]:
+                    dropped.add(name)
+                elif sections[name] != original:
+                    truncated.add(name)
+
+        for group in candidates:
+            if fits():
+                break
+            if not protected.intersection(group.indices):
+                retained.difference_update(group.indices)
+
         # If even the recent evidence is oversized, shrink contents, never IDs/arguments.
-        cap = self.budget.tool_observation_budget
+        cap = max(1, self.budget.tool_observation_budget)
         while not fits() and cap > 0:
             cap //= 2
             for group in groups:
@@ -148,6 +192,6 @@ class ContextManager:
         return ContextBuildResult(compacted, ContextStats(
             before, self.estimator.estimate_messages(compacted, tools), len(messages), len(compacted),
             tool_outputs_compressed=len(compressed.intersection(retained)),
-            context_sections_dropped=("history",) if len(retained) != len(messages) else (),
+            context_sections_dropped=tuple(sorted(dropped | ({"history"} if len(retained) != len(messages) else set()))),
             context_sections_truncated=tuple(sorted(truncated)),
-        ))
+        ), core_system=initial_context.core_system if initial_context else None, optional_sections=sections)

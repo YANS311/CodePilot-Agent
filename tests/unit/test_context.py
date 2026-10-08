@@ -92,6 +92,37 @@ class TestInitialContext:
         with pytest.raises(ContextBudgetExceeded, match="system_budget"):
             ContextManager(ContextBudget(system_budget=1)).build_initial_context(system="SAFETY CONTRACT", task="task")
 
+    def test_optional_sections_can_release_space_for_later_tool_results(self):
+        manager = ContextManager(ContextBudget(max_input_tokens=600, reserve_output_tokens=100))
+        initial = manager.build_initial_context(system="SAFETY", task="CURRENT", workspace="w" * 900, skill="s" * 150)
+        messages = initial.messages + exchange(output="Recent AssertionError evidence " * 15)
+        result = manager.compact_messages(messages, initial_context=initial)
+        assert result.messages[0]["content"].startswith("SAFETY")
+        assert result.messages[1]["content"] == "CURRENT"
+        assert "s" * 150 in result.messages[0]["content"]
+        assert result.stats.estimated_tokens_after <= 500
+        assert "workspace" in result.stats.context_sections_dropped + result.stats.context_sections_truncated
+        assert result.messages[-1]["content"] == messages[-1]["content"]
+        assert initial.optional_sections["workspace"] == "w" * 900
+
+
+class TestSettings:
+    def test_default_context_settings(self):
+        from app.core.config import Settings
+        settings = Settings(_env_file=None)
+        assert settings.context_max_input_tokens > settings.context_reserve_output_tokens
+        assert settings.context_reserve_output_tokens >= settings.llm_max_tokens
+
+    @pytest.mark.parametrize("kwargs", [
+        {"context_max_input_tokens": 4096},
+        {"context_reserve_output_tokens": 100},
+        {"context_tool_output_limit": -1},
+    ])
+    def test_invalid_settings_fail_fast(self, kwargs):
+        from app.core.config import Settings
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, **kwargs)
+
 
 class TestCompaction:
     def test_under_budget_is_unchanged_and_not_mutated(self):
@@ -154,6 +185,37 @@ class TestCompaction:
         assert result.stats.tool_outputs_compressed == 3
         group_messages(result.messages)
 
+    def test_latest_tool_evidence_survives_a_following_budget_reminder(self):
+        messages = base() + [{"role": "assistant", "content": "old noise" * 1000}] + exchange(output="critical evidence") + [
+            {"role": "system", "content": "Two tool calls remain"},
+        ]
+        manager = ContextManager(ContextBudget(max_input_tokens=400, reserve_output_tokens=50, recent_message_count=0))
+        result = manager.compact_messages(messages)
+        assert any(m.get("tool_call_id") == "tc1" and m["content"] == "critical evidence" for m in result.messages)
+        assert result.messages[-1] == messages[-1]
+        group_messages(result.messages)
+
+    def test_zero_tool_cap_still_allows_plain_history_to_shrink(self):
+        manager = ContextManager(ContextBudget(max_input_tokens=300, reserve_output_tokens=50, tool_observation_budget=0))
+        result = manager.compact_messages(base() + [{"role": "assistant", "content": "x" * 10000}])
+        assert result.messages[:2] == base()
+        assert result.stats.estimated_tokens_after <= 250
+
+    def test_first_task_and_latest_user_request_are_both_preserved(self):
+        latest = {"role": "user", "content": "Keep the API backwards compatible"}
+        manager = ContextManager(ContextBudget(max_input_tokens=300, reserve_output_tokens=50))
+        result = manager.compact_messages(base() + [{"role": "assistant", "content": "noise" * 1000}, latest])
+        assert result.messages == base() + [latest]
+
+    def test_reclaimed_sections_do_not_reappear_on_repeated_calls(self):
+        manager = ContextManager(ContextBudget(max_input_tokens=600, reserve_output_tokens=100))
+        initial = manager.build_initial_context(system="SAFETY", task="CURRENT", workspace="w" * 900)
+        first = manager.compact_messages(initial.messages + exchange(output="evidence " * 60), initial_context=initial)
+        second = manager.compact_messages(first.messages, initial_context=first)
+        assert second.messages == first.messages
+        assert second.optional_sections == first.optional_sections
+        assert second.stats.tokens_saved == 0
+
     def test_huge_latest_arguments_fail_without_protocol_corruption(self):
         messages = base() + exchange()
         messages[-2]["tool_calls"][0]["function"]["arguments"] = json.dumps({"content": "x" * 9000})
@@ -181,3 +243,11 @@ class TestCompaction:
         assert first == manager.compact_messages(messages)
         assert manager.estimator.estimate_text(first.messages[-1]["content"]) <= cap
         assert first.stats.tokens_saved >= 0
+
+    @pytest.mark.parametrize("output", ["a" * 301, "\\" * 301, "\n" * 301, "修复" * 101])
+    def test_compaction_marker_never_increases_serialized_estimate(self, output):
+        manager = ContextManager(ContextBudget(tool_observation_budget=100))
+        result = manager.compact_messages(base() + exchange(output=output))
+        assert result.stats.estimated_tokens_after <= result.stats.estimated_tokens_before
+        assert result.stats.compression_ratio <= 1.0
+        assert result.stats.tokens_saved == result.stats.estimated_tokens_before - result.stats.estimated_tokens_after

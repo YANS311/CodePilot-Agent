@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.agent.evidence_extractor import EvidenceExtractor, EvidenceItem
+from app.agent.context import ContextManager
+from app.agent.trace import ExecutionTrace
 from app.core.llm_client import LLMClient
 from app.workspace.indexer import WorkspaceIndex
 
@@ -109,11 +111,18 @@ def _format_evidence_index(evidence_index: dict[str, list[EvidenceItem]]) -> str
 class RepoAnalyzer:
     """基于 WorkspaceIndex 的多文件项目分析器。"""
 
-    def __init__(self, llm: LLMClient, index: WorkspaceIndex) -> None:
+    def __init__(
+        self, llm: LLMClient, index: WorkspaceIndex, *,
+        context_manager: ContextManager | None = None, trace: ExecutionTrace | None = None,
+        task: str = "Analyze the repository architecture",
+    ) -> None:
         self._llm = llm
         self._index = index
         self._evidence_extractor = EvidenceExtractor(index)
         self._evidence_index: dict[str, list[EvidenceItem]] = {}
+        self._context_manager = context_manager
+        self._trace = trace
+        self._task = task
 
     async def analyze(self) -> RepoAnalysis:
         """分析整个项目，返回结构化结果。"""
@@ -130,6 +139,24 @@ class RepoAnalyzer:
             evidence_index=evidence_index_text,
         )
         messages = [{"role": "user", "content": prompt}]
+
+        if self._context_manager is not None:
+            initial = self._context_manager.build_initial_context(
+                system=_REPO_ANALYSIS_PROMPT.format(file_summaries="", evidence_index=""),
+                task=self._task,
+                workspace=f"\nProject files:\n{file_summaries}\nEvidence index:\n{evidence_index_text}",
+            )
+            prepared = self._context_manager.compact_messages(initial.messages, initial_context=initial)
+            messages = prepared.messages
+            if self._trace is not None:
+                self._trace.record_event(
+                    "context_build", execution_result="success",
+                    metadata={"phase": "repo_analysis", **initial.stats.to_metadata()},
+                )
+                self._trace.record_event(
+                    "context_compaction", execution_result="success",
+                    metadata={"phase": "repo_analysis", **prepared.stats.to_metadata()},
+                )
 
         try:
             response = await self._llm.chat(messages)
