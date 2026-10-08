@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.agent.react_agent import ReActAgent, AgentRunResult
+from app.agent.trace import InMemoryTraceSink
 from app.core.llm_client import ChatResponse, LLMClient, ToolCallInfo
 from app.tools.read_file import ReadFileTool
 from app.tools.search_code import SearchCodeTool
@@ -53,6 +54,21 @@ class TestAgentDirectAnswer:
         )
         assert "FastAPI" in result.answer
         assert result.tool_calls_count == 0
+
+    def test_emits_one_task_id_to_injected_trace_sink(self):
+        llm = _mock_llm([ChatResponse(content="Dependency injection separates concerns.")])
+        sink = InMemoryTraceSink()
+        agent = ReActAgent(llm, _make_registry(), WORKSPACE, trace_sink=sink)
+
+        result = asyncio.run(agent.run("Explain dependency injection", task_id="eval-42"))
+
+        assert result.trace is not None
+        assert result.trace.task_id == "eval-42"
+        events = sink.snapshot()
+        assert [event.step_id for event in events] == list(range(1, len(events) + 1))
+        assert all(event.task_id == "eval-42" for event in events)
+        assert events[0].agent_action == "task_start"
+        assert events[-1].agent_action == "task_complete"
 
 
 # ═══════════════════════════════════════════

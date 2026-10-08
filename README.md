@@ -79,7 +79,7 @@ graph TD
 - **Quantitative Benchmark Metrics**: Task Success Rate (TSR), Pass@1, Tool Efficiency, Latency (ms), Tool Error Rate, and Error Taxonomy distribution.
 - **Multi-Layer Task Suite**: 30 synthetic benchmarks + 15 real-world repository tasks + 10 stress/recovery test cases.
 - **Deterministic Replay**: Recorded `ExecutionTrace` trajectories allow exact replay and step-level regression debugging.
-- **Trace Convergence Draft**: The additive, versioned `TraceEvent` contract defines stable task, step, timestamp, action, tool I/O, result, and latency fields for gradual producer and evaluator migration. See [`docs/trace_event.md`](docs/trace_event.md).
+- **Unified Trace Sink**: The versioned `TraceEvent` stream records routing, Skill selection, tool calls, verification, and completion under one task ID. In-memory and JSONL sinks support API inspection, durable replay, and future evaluator consumption while preserving legacy traces. See [`docs/trace_event.md`](docs/trace_event.md).
 
 ---
 

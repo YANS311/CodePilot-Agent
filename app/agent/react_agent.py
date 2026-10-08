@@ -4,13 +4,14 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.agent.budget import ToolBudget
 from app.agent.error_event import AgentErrorEvent
 from app.agent.prompts import SYSTEM_PROMPT
-from app.agent.trace import ExecutionStepTrace, ExecutionTrace
+from app.agent.trace import ExecutionStepTrace, ExecutionTrace, TraceSink
 from app.agent.verification import VerificationPolicy
 from app.memory.memory_manager import get_memory_manager
 from app.router.intent_router import get_intent_router, INTENT_REPO, INTENT_SECURITY
@@ -142,6 +143,7 @@ class ReActAgent:
         verification_policy: VerificationPolicy | None = None,
         permission_policy: PermissionPolicy | None = None,
         skill_manager_instance: SkillManager | None = None,
+        trace_sink: TraceSink | None = None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -153,23 +155,40 @@ class ReActAgent:
         self._guardrail = ToolGuardrail()
         self._permission_policy = permission_policy or PermissionPolicy.standard_coding()
         self._skill_manager = skill_manager_instance or skill_manager
+        self._trace_sink = trace_sink
         self._index: Optional[WorkspaceIndex] = None
         self._error_events: list[AgentErrorEvent] = []
         self._resolver: Optional[SmartFileResolver] = None
         self._verification = verification_policy or VerificationPolicy()
 
-    async def run(self, task: str) -> AgentRunResult:
+    async def run(self, task: str, *, task_id: str | None = None) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
+        trace = ExecutionTrace(task=task, task_id=task_id or uuid.uuid4().hex, sink=self._trace_sink)
+        trace.record_event("task_start", execution_result="started")
+
         # Prompt Injection 检查
         prompt_result = self._guardrail.check_prompt(task)
         if not prompt_result.allow:
+            trace.status = "error"
+            trace.record_event(
+                "security_check",
+                execution_result="permission_blocked",
+                metadata={"reason": prompt_result.reason},
+            )
+            trace.record_event("task_complete", execution_result="permission_blocked")
             return AgentRunResult(
                 answer=f"安全拦截: {prompt_result.reason}",
                 security_warnings=self._guardrail.warnings,
+                trace=trace,
             )
 
         # D33: Hybrid intent routing (rule → embedding → LLM fallback)
         intent_result = get_intent_router().route(task)
+        trace.record_event(
+            "intent_routing",
+            execution_result="success",
+            metadata={"intent": intent_result.intent, "layer": intent_result.layer},
+        )
 
         # SECURITY intent detected by router → block early
         if intent_result.intent == INTENT_SECURITY:
@@ -177,22 +196,38 @@ class ReActAgent:
                 "type": "intent_security",
                 "detail": f"Router detected security intent: {intent_result.details}",
             })
+            trace.status = "error"
+            trace.record_event(
+                "security_check",
+                execution_result="permission_blocked",
+                metadata={"reason": intent_result.details},
+            )
+            trace.record_event("task_complete", execution_result="permission_blocked")
             return AgentRunResult(
                 answer=f"安全拦截: 检测到可疑意图 ({intent_result.layer} layer)",
                 security_warnings=self._guardrail.warnings,
+                trace=trace,
             )
 
         # REPO intent → repo analysis mode
         if intent_result.intent == INTENT_REPO:
-            return await self._run_repo_mode(task)
+            result = await self._run_repo_mode(task)
+            trace.status = "completed"
+            trace.record_event("task_complete", execution_result="success")
+            result.trace = trace
+            return result
 
         # Progressive Disclosure: 针对任务意图按需检索并加载匹配的 Skill
         matched_skill = self._skill_manager.match_and_load_for_task(task)
         active_skill_name = matched_skill.name if matched_skill else None
         skill_prompt_section = matched_skill.to_prompt_instruction() if matched_skill else ""
 
-        # 初始化结构化 Execution Trace
-        trace = ExecutionTrace(task=task, active_skill=active_skill_name)
+        trace.active_skill = active_skill_name
+        trace.record_event(
+            "skill_selection",
+            execution_result="success" if matched_skill else "no_match",
+            metadata={"skill_name": active_skill_name},
+        )
 
         # 构建 Workspace 索引与记忆上下文并注入
         index_context = self._build_index_context()
@@ -212,8 +247,11 @@ class ReActAgent:
         # ── Self-Verification Loop ──
         if self._verification.enabled and result.wrote_file:
             result = await self._verify(task, result, messages, tools_schema)
-            if result.trace:
-                result.trace = trace
+
+        if trace.status == "running":
+            trace.status = "completed"
+        trace.record_event("task_complete", execution_result=trace.status)
+        result.trace = trace
 
         self._write_task_memory(task, result, result.steps)
         return result
@@ -453,9 +491,11 @@ class ReActAgent:
                 name="run_tests",
                 arguments={"target": target} if target else {},
             )
+            verify_started = time.perf_counter()
             test_result = await self._registry.execute(
                 test_tc, self._workspace_root, guardrail=self._guardrail
             )
+            verify_latency = (time.perf_counter() - verify_started) * 1000.0
             tool_calls_count = result.tool_calls_count + 1
 
             # Record verification step
@@ -470,6 +510,17 @@ class ReActAgent:
             )
             result.steps.append(verify_step)
             result.tool_results.append(test_result)
+            if result.trace:
+                result.trace.add_step(
+                    step=tool_calls_count,
+                    tool_name="run_tests",
+                    arguments={"target": target} if target else {},
+                    status="success" if test_result.success else "error",
+                    latency_ms=verify_latency,
+                    decision="[verification] Running tests after write_file",
+                    error=test_result.output if not test_result.success else None,
+                    output=test_result.output,
+                )
 
             # Parse test result
             test_passed = test_result.success
@@ -526,7 +577,13 @@ class ReActAgent:
                 return result
 
             # Let the agent continue fixing
-            continuation = await self._run_core(task, messages, tools_schema)
+            continuation = await self._run_core(
+                task,
+                messages,
+                tools_schema,
+                trace=result.trace,
+                active_skill=result.active_skill,
+            )
 
             # Merge continuation into result
             result.answer = continuation.answer

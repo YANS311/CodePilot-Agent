@@ -1,10 +1,10 @@
 # TraceEvent Contract Draft
 
-Status: draft (`schema_version = "0.1"`)
+Status: active compatibility contract (`schema_version = "0.1"`)
 
-`TraceEvent` is the target event contract for converging Agent runtime,
-tool execution, API output, and evaluation traces. PR0 introduces the contract
-without replacing `AgentStep`, `ExecutionTrace`, or `StepTrace`.
+`TraceEvent` is the normalized event contract for Agent runtime, tool execution,
+API output, and evaluation traces. `ExecutionTrace` retains its legacy step list
+while publishing these events to an optional `TraceSink`.
 
 ## Fields
 
@@ -34,8 +34,15 @@ without replacing `AgentStep`, `ExecutionTrace`, or `StepTrace`.
 - Skills remain procedural instructions and do not emit or execute tools by
   themselves. Skill selection will become a trace event in a later PR.
 
+## Trace Sinks
+
+- `InMemoryTraceSink` collects events for API consumers and tests.
+- `JsonlTraceSink` appends one event per line for durable replay and evaluation.
+- Custom sinks implement `emit(event)` and can forward events to observability systems.
+- Sink failures are logged and do not interrupt the Agent task; the in-result event list remains available.
+
 ## Migration Boundary
 
-PR0 does not change API response schemas or evaluation report formats. Follow-up
-changes will add a trace sink, adapt existing trace producers, and then migrate
-evaluation metrics to consume `TraceEvent` as their single source of truth.
+The runtime now emits normalized routing, Skill selection, tool call, verification,
+and completion events. Existing `ExecutionStepTrace`, API response schemas, and
+whole-trace JSONL exports remain compatible. Evaluation migration is a separate step.
