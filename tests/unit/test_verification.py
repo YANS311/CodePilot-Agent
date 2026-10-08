@@ -127,6 +127,15 @@ class TestVerificationTrigger:
 
         assert len(run_tests_called) >= 1, "run_tests should be called after write_file"
         assert result.verification_passed is True
+        assert result.trace is not None
+        tool_events = [
+            event for event in result.trace.events
+            if event.agent_action == "tool_call"
+        ]
+        assert [event.tool_name for event in tool_events] == ["write_file", "run_tests"]
+        assert [event.step_id for event in result.trace.events] == list(
+            range(1, len(result.trace.events) + 1)
+        )
 
     def test_no_verification_when_disabled(self):
         """When verification is disabled, no run_tests is called after write."""
