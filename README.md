@@ -28,7 +28,7 @@ Agent Harness
 |   `-- Repository Memory
 |-- Agent Skills
 |-- ReAct Runtime
-|-- Checkpoint State / Storage (opt-in)
+|-- Checkpoint / Resume (opt-in)
 |-- Tool Budget
 |-- Verification / Recovery
 |-- Permission Policy
@@ -65,7 +65,7 @@ See [Context Management](docs/context_management.md) for exact algorithm, limits
 
 **Context Manager** decides what the model sees in this specific call. It consumes retrieved Memory alongside Skills, Workspace and history; it does not create another Memory store, change retrieval, or replace the kernel's dependency-injection `AgentContext`.
 
-Checkpoint persistence uses a separate versioned execution-state contract and application-owned atomic JSON storage, not the Memory store. See [Checkpoint / Resume](docs/checkpoint_resume.md) for schema, storage boundaries and conservative crash-consistency policy.
+**Checkpoint / Resume** is opt-in execution-state persistence, separate from Memory. `ReActAgent(..., checkpoint_manager=...)` writes versioned atomic JSON snapshots at complete protocol boundaries. A fresh runtime can explicitly `resume_task(task_id)` with the saved context, consumed budget and verification position. Workspace/policy mismatches and uncertain in-flight calls fail closed; no automatic replay or exactly-once execution is promised. See [Checkpoint / Resume](docs/checkpoint_resume.md) for setup, recovery demonstrations, storage boundaries and limitations.
 
 ### 2.2 Unified Tool System (Built-in + MCP)
 - **Polymorphic Contract**: All tools inherit from `BaseTool`, implementing `to_openai_schema()` and `run(workspace_root, **kwargs)`.
