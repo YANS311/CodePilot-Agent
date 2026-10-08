@@ -4,259 +4,164 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **A lightweight and extensible Coding Agent Harness built with Python, featuring ReAct orchestration, unified tool runtime, MCP integration, Agent Skills, sandboxed execution and reproducible evaluation.**
+A Python/FastAPI Coding Agent Harness prototype: bounded ReAct execution,
+unified tools, context engineering, verification and conservative recovery.
+The Harness makes agent execution inspectable and reproducible; MCP connects
+capabilities but does not replace orchestration.
 
----
+**Evidence:** [release benchmark report](docs/harness_benchmark_report.md),
+[machine-readable results](benchmarks/results/),
+[evaluation protocol](docs/harness_evaluation.md),
+[interview brief](docs/interview_project_brief.md).
+Real-model effectiveness is **NOT RUN** in this release. Offline simulated
+results validate runtime contracts, not general coding performance.
 
-## 1. System Architecture
-
-CodePilot Agent separates the orchestration/runtime/reliability harness from capability connectivity and environment execution. MCP is the connectivity layer, not the orchestration layer. Built-in tools and MCP servers share an execution contract; the Harness owns context selection, memory consumption, Skills, budgets, recovery, permissions and evaluation.
+## Architecture
 
 ```text
 User Task / FastAPI
         |
-        v
-Agent Harness
-|-- Intent Router
-|-- Context Manager
-|   |-- Context Assembly
-|   |-- Token Budget
-|   `-- Deterministic Compaction
+Coding Agent Harness
+|-- Intent Routing
+|-- ReAct Orchestration
+|-- Context Engineering
 |-- Hybrid Memory
-|   |-- Task Memory
-|   |-- Error Memory
-|   `-- Repository Memory
-|-- Agent Skills
-|-- ReAct Runtime
-|-- Checkpoint / Resume (opt-in)
-|-- Tool Budget
+|-- Skills / Progressive Disclosure
+|-- Tool Budget / Loop Control
 |-- Verification / Recovery
+|-- Checkpoint / Resume (opt-in)
 |-- Permission Policy
-`-- Execution Trace / Evaluation
-        |
-        v
-Unified Tool Runtime (ToolRegistry)
-|-- Built-in Tools
-`-- MCP (capability connectivity)
-        |
-        v
-Local / Docker Execution; external MCP servers
+|-- Unified Trace / Evaluation
+`-- Tool Runtime (ToolRegistry)
+    |-- Built-in Tools
+    |-- MCP Providers
+    `-- Local / Docker Execution
 ```
 
----
+## Core Engineering
 
-## 2. Core Capabilities
+- **Unified execution:** built-in and external tools share validation, outcomes,
+  budgets and permission enforcement. Workspace file tools are guarded.
+- **Context and Memory:** task context combines workspace, retrieved experience
+  and Skills; deterministic compaction preserves complete tool-call groups.
+- **Skills:** metadata routing and progressive disclosure add procedures without
+  replacing executable tools.
+- **Verification:** explicit post-write test phases and bounded repair retries;
+  final benchmark success uses independent pytest, not the agent's claim.
+- **Recovery and evidence:** ordered task-owned TraceEvents, checkpoint policy
+  checks and rejection of indeterminate side effects rather than silent replay.
 
-### 2.1 Agent Runtime & ReAct Loop
-- **Iterative Reasoning Loop**: Systematic `Think -> Act -> Observe` cycle with tool-call limits (`ToolBudget`) and independent per-call context budgeting (`ContextManager`).
-- **Fake Tool Call & Completion Drift Recovery**: Real-time trajectory heuristic detection preventing hallucinated inline tool outputs or false "done" declarations without modifying code.
-- **Automated Self-Verification**: Post-write execution loop automatically triggers targeted test suites and injects test assertion failures back into context for iterative self-healing.
+Details: [architecture](docs/architecture.md),
+[context management](docs/context_management.md),
+[TraceEvent contract](docs/trace_event.md).
 
-#### Context Engineering
-- **Budgeted Assembly**: Mandatory system/safety instructions and the current task are preserved. Optional text is allocated in order: active Skill, retrieved Memory, Workspace/index.
-- **Deterministic Compaction**: Before ReAct calls, verification continuations, budget-exhaustion summaries and Harness repository analysis, oversized observations keep bounded head/tail evidence. Old history is evicted as logical groups; assistant tool calls and all corresponding results are never separated.
-- **Measured Estimates**: `context_build` / `context_compaction` events expose before/after estimates, saved estimates, retained ratio, message counts and section changes through the existing Trace Sink. No message contents are added to these events.
-- **Configuration**: `CODEPILOT_CONTEXT_MAX_INPUT_TOKENS=32768`, `CODEPILOT_CONTEXT_RESERVE_OUTPUT_TOKENS=4096`, `CODEPILOT_CONTEXT_TOOL_OUTPUT_LIMIT=2048`, `CODEPILOT_CONTEXT_RECENT_MESSAGE_COUNT=6`. The usable estimated input is the total envelope minus the output reservation; that reservation must cover `llm_max_tokens`.
+## Benchmark Evidence
 
-See [Context Management](docs/context_management.md) for exact algorithm, limits and configuration. Estimates include tool schemas and wire-message fields, but are not model billing tokens. Mandatory payloads that cannot fit raise an explicit error.
+The audited legacy datasets contain **75 tasks**: 30 synthetic coding tasks,
+15 authored small repository tasks, 10 stress tasks and 20 security tasks.
+[The manifest](benchmarks/manifest.json) records source, seed, target and criterion;
+collection results establish target executability, not complete requirement coverage.
+The "real_world" fixtures are not external production repositories. Some task
+descriptions contain hints; these are not a clean hidden-test benchmark.
 
-#### Memory vs Context Management
-**Memory** decides what knowledge to store/retrieve across steps and tasks. Existing `HybridMemoryManager` remains authoritative for structured and vector-backed Task/Error/Repository Memory.
+The release separates four kinds of evidence:
 
-**Context Manager** decides what the model sees in this specific call. It consumes retrieved Memory alongside Skills, Workspace and history; it does not create another Memory store, change retrieval, or replace the kernel's dependency-injection `AgentContext`.
+| Experiment | Interpretation |
+|---|---|
+| Real-model cumulative ablation | NOT RUN; paid calls need explicit approval |
+| Scripted coding controls | Three scenarios, independent pytest, repeated isolated trials |
+| Six synthetic context scenarios | Compaction, evidence sentinels and protocol validity only |
+| Six checkpoint fault cases | Safe resume and fail-closed rejection, separate from TSR |
 
-**Checkpoint / Resume** is opt-in execution-state persistence, separate from Memory. `ReActAgent(..., checkpoint_manager=...)` writes versioned atomic JSON snapshots at complete protocol boundaries. A fresh runtime can explicitly `resume_task(task_id)` with the saved context, consumed budget and verification position. Workspace/policy mismatches and uncertain in-flight calls fail closed; no automatic replay or exactly-once execution is promised. See [Checkpoint / Resume](docs/checkpoint_resume.md) for setup, recovery demonstrations, storage boundaries and limitations.
+The report includes measured overhead and failure cases. Estimated input tokens
+use UTF-8 bytes/3, not provider-billed tokens; Pass@1 is not reported without a
+valid single-candidate sampling protocol. No real-model benefit is inferred from
+scripted responses or compression ratios.
 
-### 2.2 Unified Tool System (Built-in + MCP)
-- **Polymorphic Contract**: All tools inherit from `BaseTool`, implementing `to_openai_schema()` and `run(workspace_root, **kwargs)`.
-- **Domain Success Semantics**: `ToolResult.success` represents the tool's domain outcome, not merely a completed Python call. `RunTestsTool` therefore propagates the JSON test result into the registry result.
-- **MCP Client Adapter**: Implements the Model Context Protocol (JSON-RPC 2.0 over `stdio`), dynamically discovering tools, converting JSON Schemas to OpenAI function schemas, and mounting seamlessly into `ToolRegistry`.
-- **Namespace & Failure Isolation**: Server crashes, malformed responses, and protocol timeouts are caught and reported as structured errors without crashing the main agent harness.
-
-### 2.3 Agent Skills System (Progressive Disclosure)
-- **Procedural Knowledge Separation**: Distinction between *Tools* (what the agent can execute) and *Skills* (how the agent should approach a domain task step-by-step).
-- **Three-Tier Progressive Disclosure**:
-  - **Level 1 (Metadata Discovery)**: System prompt indexes only names and summaries (<100 tokens).
-  - **Level 2 (Instruction Loading)**: Full `SKILL.md` procedural guidelines are loaded on-demand when relevant task intent is matched.
-  - **Level 3 (Resource Loading)**: Associated reference manuals, scripts, and examples are fetched strictly on explicit need.
-
-### 2.4 Sandboxed Execution & Security Boundaries
-- **Deterministic Permission Policy**: Hard enforcement of `READ`, `WRITE`, `EXECUTE`, `NETWORK`, and `GIT_MUTATE` actions in `ToolRegistry` (Prompt Guardrail != Security Boundary).
-- **Execution Runners**: Pluggable `LocalRunner` (subprocess isolation with workspace confinement) and `DockerRunner` (isolated container sandbox).
-- **Path Traversal Blocking**: Strict `safe_resolve` validation preventing directory escape (`../`) across all native tools and MCP adapters.
-
-### 2.5 Reproducible Evaluation Framework
-- **Quantitative Benchmark Metrics**: Task Success Rate (TSR), Pass@1, Tool Efficiency, Latency (ms), Tool Error Rate, and Error Taxonomy distribution.
-- **Multi-Layer Task Suite**: 30 synthetic benchmarks + 15 real-world repository tasks + 10 stress/recovery test cases.
-- **Deterministic Replay**: Recorded `ExecutionTrace` trajectories allow exact replay and step-level regression debugging.
-- **Unified Trace Sink**: The versioned `TraceEvent` stream records routing, Skill selection, tool calls, verification, and completion under one task ID. In-memory and JSONL sinks support API inspection, durable replay, and future evaluator consumption while preserving legacy traces. See [`docs/trace_event.md`](docs/trace_event.md).
-- **Trace-Driven Evaluation**: `EvaluationRunner` supplies the benchmark task ID to the Agent and derives tool counts, verification attempts, and modified files from normalized trace events instead of parsing free-form observations.
-  Automatic verification is identified by event metadata; modified files are confirmed against the seed contents before workspace cleanup.
-
----
-
-## 3. Quick Start
-
-### 3.1 Setup Environment
+## Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/YANS311/CodePilot-Agent.git
-cd CodePilot-Agent
-
-# Install dependencies
 pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### 3.2 Configure MCP Servers (`mcp.json`)
+Configure provider settings using the existing `.env.example`. Keep credentials
+and logs private: current startup logging includes an API-key prefix and requires
+hardening before public deployment. CI mode uses deterministic mocks, not a real
+model benchmark. Docker and community MCP checks have optional external dependencies.
 
-Declare community or custom MCP servers in the root `mcp.json`:
+## Reproducible Evaluation
 
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
-      "timeout": 30.0
-    },
-    "memory": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "timeout": 15.0
-    }
-  }
-}
+Use the repository's configured conda environment on this workstation:
+
+```powershell
+$env:CODEPILOT_CI_MODE = 'true'
+& C:\Users\A\anaconda3\envs\mini_coding_agent\python.exe scripts/run_harness_benchmark.py --offline --audit-collect --repetitions 2
+& C:\Users\A\anaconda3\envs\mini_coding_agent\python.exe scripts/run_harness_benchmark.py --dry-run --tasks fix-subtract --repetitions 2
+& C:\Users\A\anaconda3\envs\mini_coding_agent\python.exe -m pytest tests/unit tests/integration -q --tb=short
 ```
 
-Load MCP configuration programmatically:
+The CLI defaults to offline. Live mode requires explicit task selection and
+`--approve-paid`, a configured key and non-CI mode. Dry-run shows call-volume
+upper bounds and pricing uncertainty without constructing a model client.
+See [the protocol](docs/harness_evaluation.md) for safe setup and interpretation.
 
-```python
-from app.mcp.registry import MCPRegistry
-from app.tools.registry import ToolRegistry
+Four **cumulative**, not independent, profiles share tools, schemas, seeds,
+permissions, budgets and final test criteria:
 
-mcp_registry = MCPRegistry()
-mcp_registry.load_from_json("mcp.json")
-await mcp_registry.start_all()
+| Profile | Memory retrieval | Context compaction | Automatic verification |
+|---|---|---|---|
+| A: ReAct | Off | Guarded pass-through | Off |
+| B: +Memory | On | Guarded pass-through | Off |
+| C: +Context | On | Existing ContextManager | Off |
+| D: Full Harness | On | Existing ContextManager | On |
 
-tool_registry = ToolRegistry()
-mcp_registry.mount_to_tool_registry(tool_registry)
-print(f"Loaded tools: {[t.name for t in tool_registry.list_tools()]}")
-```
+Each trial has a fresh temporary workspace, model conversation, Memory and trace
+sink. Seeded Memory contains a documented general debugging procedure, not test
+solutions; cold-start is separately configurable. Normal ablations do not enable
+checkpoints. Recorded provenance includes source SHA, model category, configuration,
+tool-schema hash, seeds, repetitions and estimated-token semantics.
 
-### 3.3 Adding a Custom Agent Skill (`skills/<name>/SKILL.md`)
+## Reliability And Safety Boundaries
 
-Create a skill directory with a standard YAML frontmatter contract:
+Memory retrieves experience; Context bounds the next request; Checkpoint stores
+resumable state; Trace records execution. They are not interchangeable.
+Recovery validates task, workspace and policy and rejects uncertain side effects.
+It is single-host, bounded checkpoint recovery, **not exactly-once execution**.
 
-```markdown
----
-name: bug-fix
-description: Diagnose and fix reproducible software defects following systematic verification.
-version: 1.0.0
-tags: [debugging, bug-fix, verification]
----
+Permission checks remain enabled in all profiles. Local subprocess execution is
+not a multi-tenant security sandbox. Docker isolation is optional, not proof of
+production security. Prompt-injection protection is incomplete, and approximate
+token accounting cannot reproduce provider billing.
 
-# Procedural Knowledge: Bug Fixing Workflow
-1. Reproduce & Observe: Run tests to observe failure trace.
-2. Root Cause Analysis: Use search_code and read_file.
-3. Minimal Surgical Patch: Modify code with code_edit.
-4. Targeted Verification: Re-run test suite to confirm pass.
-5. Regression Check: Inspect git_diff.
-```
-
-The `SkillManager` automatically indexes Level 1 metadata and loads Level 2 instructions when a bug-fix task is dispatched:
-
-```python
-from app.skills.manager import skill_manager
-
-matched_skill = skill_manager.match_and_load_for_task("Fix failing test in calculator subtract method")
-print(f"Active skill: {matched_skill.name}")
-```
-
-### 3.4 Running the Test Suite
-
-```bash
-# Run unit tests (391 tests, ~45s)
-pytest tests/unit -q --tb=short
-
-# Run CI-equivalent full test suite (575 passed, 6 skipped, ~67s)
-CODEPILOT_CI_MODE=true pytest tests/unit tests/integration -q --tb=short
-
-# Verify specific modules
-pytest tests/unit/test_skills.py tests/unit/test_permission.py tests/unit/test_mcp_config.py -v
-```
-
----
-
-## 4. Repository Structure
+## Repository Structure
 
 ```text
-CodePilot-Agent/
-├── app/
-│   ├── agent/                 # Core Agent runtime (ReAct loop, prompts, budget, trace)
-│   │   ├── react_agent.py     # ReAct Agent orchestrator & verification loop
-│   │   ├── trace.py           # Structured execution trace & observability
-│   │   ├── budget.py          # Tool call budget & anti-loop controller
-│   │   └── verification.py    # Self-verification policy & retry engine
-│   ├── core/                  # Core config, LLM client abstraction & kernel
-│   ├── execution/             # Sandboxed execution runners (LocalRunner, DockerRunner)
-│   ├── evaluation/            # Benchmark runner, metrics computation & replay
-│   ├── mcp/                   # Model Context Protocol client & registry
-│   │   ├── client.py          # Stdio JSON-RPC transport & protocol client
-│   │   ├── registry.py        # MCP server manager & MCPTool adapter
-│   │   └── server.py          # Reference builtin stdio MCP server
-│   ├── models/                # ToolCall, ToolResult, AgentStep models
-│   ├── router/                # 3-layer hybrid intent router
-│   ├── security/              # PermissionPolicy & ToolGuardrail
-│   │   ├── permission.py      # Runtime permission action enforcement
-│   │   └── tool_guardrail.py  # Path traversal & prompt security guards
-│   ├── skills/                # Agent Skills system (Progressive Disclosure)
-│   │   ├── models.py          # Skill & SkillMetadata data contracts
-│   │   ├── loader.py          # YAML frontmatter scanner & resource loader
-│   │   ├── selector.py        # Task intent to skill matcher
-│   │   └── manager.py         # Runtime skill lifecycle manager
-│   ├── tools/                 # Built-in developer tools (BaseTool implementations)
-│   └── workspace/             # Workspace indexer, resolver & cache
-├── skills/                    # Built-in standard coding skills
-│   ├── api-spec-validator/    # FastAPI route & OpenAPI contract validation (scripts/ & references/)
-│   ├── bug-fix/               # Defect diagnosis & verification workflow (references/)
-│   ├── code-review/           # Quality & security audit workflow (references/)
-│   ├── git-workflow/          # Conventional commit & conflict resolution (scripts/ & references/)
-│   ├── security-audit/        # Vulnerability, secret & injection scan (scripts/ & references/)
-│   └── test-debugging/        # Flaky & failing test isolation workflow (references/)
-├── benchmarks/                # Synthetic & real-world evaluation tasks
-├── mcp.json                   # Standard MCP server declarations
-├── pyproject.toml             # Pytest & project build configuration
-└── tests/
-    ├── unit/                  # Fast deterministic unit tests (391 tests)
-    └── integration/           # MCP, runner & API integration tests (190 tests)
+app/agent/           ReAct, context, verification, checkpoint
+app/tools/           Registry, built-in tools, providers
+app/memory/          Hybrid Memory
+app/evaluation/      Existing evaluator and cumulative benchmark adapter
+skills/              Procedural agent Skills
+evaluation/          Legacy coding, stress and security tasks
+benchmarks/          Audited manifest, repository fixtures, curated release results
+tests/               Unit, integration and optional e2e coverage
+docs/                Architecture, protocol, measured report, interview brief
+workspace/           Reusable workspace seeds
+scripts/             Evaluation and development commands
 ```
 
----
+## Release Scope
 
-## 5. Architectural Design Decisions
+This is an interview-ready engineering prototype, not a production deployment
+claim. Real-model efficacy, semantic Memory benefit, broader hidden datasets and
+deployment hardening remain unmeasured or incomplete. The offline Memory backend
+uses deterministic hash embeddings for reproducibility, not semantic retrieval
+validation. Legacy scripts and optional integrations may need separate maintenance.
 
-### 5.1 Why MCP (Model Context Protocol)?
-Rather than maintaining ad-hoc proprietary integrations for every external developer service (GitHub, databases, memory stores, documentation search), MCP provides an open, standardized JSON-RPC protocol. CodePilot acts as an **MCP Client**, allowing developers to connect any community MCP server via simple JSON configuration without modifying agent core code.
+After this milestone, freeze the job-application release and use the reproducible
+report to discuss implementation, trade-offs and limits. Do not automatically add
+another framework or feature milestone.
 
-### 5.2 Why Skills vs. Tools?
-- **Tools** are *Actions/Capabilities*: They define *what* operations the agent can execute in the physical environment (`read_file`, `write_file`, `run_tests`).
-- **Skills** are *Procedural Knowledge*: They define *how* an experienced engineer structures problem-solving steps (e.g. reproduce -> isolate -> minimal patch -> verify -> diff check).
+## License
 
-### 5.3 Why Progressive Disclosure?
-Injecting dozens of complete tool manuals and workflows into the system prompt at startup causes severe context window bloat, increases inference costs, and dilutes model attention. Progressive Disclosure exposes only lightweight Level 1 summaries (<100 tokens) initially, dynamically fetching Level 2 instructions only when relevant, and loading Level 3 reference files strictly on explicit demand.
-
-### 5.4 Why a Harness instead of a Model Wrapper?
-A production Coding Agent cannot rely solely on raw LLM capabilities. The **Harness** layer provides the essential engineering substrate:
-1. **Deterministic Safety**: Runtime permission enforcement and workspace sandboxing.
-2. **Loop Control & Budgeting**: Detecting duplicate searches, fake tool calls, and loop fatigue.
-3. **Traceability**: Step-by-step latency, decision, and error event tracking.
-4. **Reproducible Evaluation**: Scientific benchmarking across model iterations.
-
----
-
-## 6. License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT, as declared by the project. A standalone license file is not yet included.
