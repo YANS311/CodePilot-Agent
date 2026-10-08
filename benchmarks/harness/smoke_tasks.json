@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "label": "SIMULATED scripted-LLM runtime contracts, NOT real model effectiveness",
+  "tasks": [
+    {"id": "first-pass", "name": "Correct scripted edit", "difficulty": "easy", "category": "arithmetic-regression", "task": "Fix the arithmetic regression in subtract.", "file": "arithmetic.py", "test_target": "tests/test_arithmetic.py::test_difference"},
+    {"id": "recoverable", "name": "Scripted wrong edit then repair", "difficulty": "easy", "category": "arithmetic-regression", "task": "Fix the arithmetic regression in subtract.", "file": "arithmetic.py", "test_target": "tests/test_arithmetic.py::test_difference"},
+    {"id": "unrecoverable", "name": "Scripted edits stay incorrect", "difficulty": "easy", "category": "arithmetic-regression", "task": "Fix the arithmetic regression in subtract.", "file": "arithmetic.py", "test_target": "tests/test_arithmetic.py::test_difference"}
+  ]
+}

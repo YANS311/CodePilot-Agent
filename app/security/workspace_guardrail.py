@@ -92,6 +92,16 @@ def _check_write(args: dict, workspace_root: str) -> GuardrailResult:
             reason=f"禁止写入 .git 目录: {path}",
         )
 
+    root = Path(workspace_root).resolve()
+    try:
+        (root / path).resolve().relative_to(root)
+    except (ValueError, OSError):
+        return GuardrailResult(
+            allow=False,
+            risk_type=RiskType.DESTRUCTIVE_ACTION,
+            reason=f"Write target is outside workspace: {path}",
+        )
+
     return GuardrailResult(allow=True)
 
 
