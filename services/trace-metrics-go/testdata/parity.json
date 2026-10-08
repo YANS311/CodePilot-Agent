@@ -1,0 +1,379 @@
+[
+  {
+    "name": "lifecycle_and_verification",
+    "request": {
+      "task_id": "t",
+      "events": [
+        {
+          "task_id": "t",
+          "step_id": 1,
+          "agent_action": "checkpoint_saved",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "run_tests",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "phase": "verification"
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 3,
+          "agent_action": "context_build",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "read_file",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 4,
+          "agent_action": "context_compaction",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "estimated_input_tokens": 999
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 5,
+          "agent_action": "llm_request",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "started",
+          "duration_ms": 0.0,
+          "metadata": {
+            "estimated_input_tokens": 120
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 6,
+          "agent_action": "llm_response",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "provider_usage": {
+              "prompt_tokens": 900
+            }
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 7,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "read_file",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "success",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 8,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "run_tests",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "error",
+          "duration_ms": 0.0,
+          "metadata": {
+            "phase": "verification"
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 9,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "run_tests",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "success",
+          "duration_ms": 0.0,
+          "metadata": {
+            "phase": "verification"
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 10,
+          "agent_action": "verification_attempt",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "run_tests",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "phase": "verification"
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 11,
+          "agent_action": "task_complete",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "completed",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        }
+      ]
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 3,
+      "llm_requests": 1,
+      "verification_attempts": 2,
+      "total_estimated_input_tokens": 120,
+      "terminal_status": "completed"
+    }
+  },
+  {
+    "name": "empty",
+    "request": {
+      "task_id": "t",
+      "events": []
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 0,
+      "llm_requests": 0,
+      "verification_attempts": 0,
+      "total_estimated_input_tokens": 0,
+      "terminal_status": "unknown"
+    }
+  },
+  {
+    "name": "unnamed_tools_and_unknown_terminal",
+    "request": {
+      "task_id": "t",
+      "events": [
+        {
+          "task_id": "t",
+          "step_id": 1,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 2,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 3,
+          "agent_action": "tool_call",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": "run_tests",
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "phase": "development"
+          },
+          "schema_version": "0.1"
+        }
+      ]
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 1,
+      "llm_requests": 0,
+      "verification_attempts": 0,
+      "total_estimated_input_tokens": 0,
+      "terminal_status": "unknown"
+    }
+  },
+  {
+    "name": "latest_terminal",
+    "request": {
+      "task_id": "t",
+      "events": [
+        {
+          "task_id": "t",
+          "step_id": 1,
+          "agent_action": "task_complete",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "error",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 2,
+          "agent_action": "task_resumed",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 10,
+          "agent_action": "task_complete",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "verification_failed",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        }
+      ]
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 0,
+      "llm_requests": 0,
+      "verification_attempts": 0,
+      "total_estimated_input_tokens": 0,
+      "terminal_status": "verification_failed"
+    }
+  },
+  {
+    "name": "precise_tokens",
+    "request": {
+      "task_id": "t",
+      "events": [
+        {
+          "task_id": "t",
+          "step_id": 1,
+          "agent_action": "llm_request",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "estimated_input_tokens": 9007199254740993
+          },
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 2,
+          "agent_action": "llm_request",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {
+            "estimated_input_tokens": 0
+          },
+          "schema_version": "0.1"
+        }
+      ]
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 0,
+      "llm_requests": 2,
+      "verification_attempts": 0,
+      "total_estimated_input_tokens": 9007199254740993,
+      "terminal_status": "unknown"
+    }
+  },
+  {
+    "name": "monotonic_gaps",
+    "request": {
+      "task_id": "t",
+      "events": [
+        {
+          "task_id": "t",
+          "step_id": 0,
+          "agent_action": "task_start",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "unknown",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        },
+        {
+          "task_id": "t",
+          "step_id": 40,
+          "agent_action": "task_complete",
+          "timestamp": "2026-10-08T12:51:49.778149+00:00",
+          "tool_name": null,
+          "tool_input": {},
+          "tool_output": null,
+          "execution_result": "cancelled",
+          "duration_ms": 0.0,
+          "metadata": {},
+          "schema_version": "0.1"
+        }
+      ]
+    },
+    "expected": {
+      "task_id": "t",
+      "executed_tool_calls": 0,
+      "llm_requests": 0,
+      "verification_attempts": 0,
+      "total_estimated_input_tokens": 0,
+      "terminal_status": "cancelled"
+    }
+  }
+]

@@ -26,6 +26,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Set up Go for trace summary parity
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -36,3 +42,17 @@ jobs:
 
       - name: Run integration tests
         run: pytest tests/integration -q --tb=short
+
+  trace-metrics-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+      - name: Test and vet standalone Go service
+        working-directory: services/trace-metrics-go
+        run: |
+          go test ./...
+          go vet ./...
