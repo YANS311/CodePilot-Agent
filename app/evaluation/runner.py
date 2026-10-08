@@ -50,6 +50,7 @@ class EvaluationRunner:
         tasks_file: str | Path | None = None,
         workspace_seed: str | Path | None = None,
         workspace_eval: str | Path | None = None,
+        memory_manager=None,
     ) -> None:
         self._tasks_file = Path(tasks_file) if tasks_file else (
             _PROJECT_ROOT / "evaluation" / "tasks.json"
@@ -61,6 +62,7 @@ class EvaluationRunner:
             _PROJECT_ROOT / "workspace_eval"
         )
         self._runner = LocalExecutionRunner()
+        self._memory_manager = memory_manager
 
     def load_tasks(self) -> list[EvalTask]:
         """从 tasks.json 加载评测任务列表。"""
@@ -279,7 +281,7 @@ class EvaluationRunner:
             )
             # D32: track memory utilization
             try:
-                mem_mgr = get_memory_manager()
+                mem_mgr = self._memory_manager if self._memory_manager is not None else get_memory_manager()
                 similar = mem_mgr.query_task_memory(task.task, limit=1)
                 eval_result.memory_utilized = len(similar) > 0
             except Exception:

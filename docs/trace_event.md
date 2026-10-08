@@ -41,11 +41,18 @@ while publishing these events to an optional `TraceSink`.
   Metadata contains estimated tokens before/after, `tokens_saved`, retained
   `compression_ratio` (after/before), messages before/after, retained tool outputs
   compressed, dropped/truncated section names and `compaction_triggered`.
-  Compaction phase is `react`, `final_summary`, or `repo_analysis`. Context events
+  Compaction phase is `react`, `final_summary`, `checkpoint`, or `repo_analysis`. Context events
   have no tool name/input/output, add no legacy tool step, and do not affect tool
   counts, verification attempts, changed files, or terminal task outcomes.
   No prompt, Memory text or observation contents are copied into these events.
   See [Context Management](context_management.md) for estimate limitations.
+- `llm_request` records one logical ReAct model invocation after context preparation
+  and any checkpoint save, with phase, estimated input tokens and estimator name.
+  `llm_response` records successful response latency and separately allowlisted
+  nonnegative integer provider usage when supplied. These are not HTTP retry counts
+  or billing estimates. No prompt, response text, headers or credentials are included.
+  Checkpoint cursor reservations account for these lifecycle events. Repository
+  analysis is outside the task-performance ablation protocol.
 - `task_complete` records runtime termination (`completed`, `error`,
   `cancelled`, `budget_exhausted`, or `verification_failed`). `completed`
   alone does not establish benchmark task success; the evaluator runs its own tests.

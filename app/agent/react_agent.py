@@ -156,6 +156,7 @@ class ReActAgent:
         trace_sink: TraceSink | None = None,
         context_manager: ContextManager | None = None,
         checkpoint_manager: CheckpointManager | None = None,
+        memory_manager=None,
     ) -> None:
         self._llm = llm
         self._registry = registry
@@ -182,6 +183,7 @@ class ReActAgent:
         self._checkpoint_state = None
         self._checkpoint_result = None
         self._checkpoint_context = None
+        self._memory_manager = memory_manager
 
     async def run(self, task: str, *, task_id: str | None = None) -> AgentRunResult:
         """执行一个编码任务，返回最终结果。"""
@@ -249,7 +251,7 @@ class ReActAgent:
             event_cursor = state.trace.next_event_id
             # Claim lifecycle IDs durably before emitting anything to an external sink.
             state = self._checkpoint_manager.store.save(state.model_copy(update={
-                "trace": state.trace.model_copy(update={"next_event_id": event_cursor + 4}),
+                "trace": state.trace.model_copy(update={"next_event_id": event_cursor + 8}),
             }))
             trace = ExecutionTrace(
                 task=state.task, task_id=state.task_id, sink=self._trace_sink,
@@ -328,7 +330,7 @@ class ReActAgent:
         pending = in_flight or []
         runtime = state.runtime.model_copy(update={"iteration": state.runtime.iteration if iteration is None else iteration})
         read_count, read_times = self._guardrail.checkpoint_state()
-        captured_trace = self._checkpoint_manager.capture_trace(trace, reserve=1 + 2 * len(pending) + (8 if pending else 0))
+        captured_trace = self._checkpoint_manager.capture_trace(trace, reserve=8 if llm_request_prepared else 1 + 2 * len(pending) + (8 if pending else 0))
         captured_trace.next_event_id = max(captured_trace.next_event_id, state.trace.next_event_id)
         if terminal:
             status = trace.status if trace.status in TERMINAL_STATUSES else "failed"
@@ -692,7 +694,21 @@ class ReActAgent:
             )
         if self._checkpoint_state is not None:
             self._save_checkpoint(self._checkpoint_result, messages, trace, llm_request_prepared=True)
-        return await self._llm.chat(messages, tools=tools or None)
+        if trace is not None:
+            trace.record_event("llm_request", execution_result="started", metadata={
+                "phase": phase, "estimated_input_tokens": self._context_manager.estimator.estimate_messages(messages, tools),
+                "estimator": type(self._context_manager.estimator).__name__, "temperature": 0.0,
+            })
+        started = time.perf_counter()
+        response = await self._llm.chat(messages, tools=tools or None)
+        if trace is not None:
+            usage = response.raw.get("usage", {}) if isinstance(response.raw, dict) else {}
+            safe_usage = {key: value for key, value in usage.items() if key in {
+                "prompt_tokens", "completion_tokens", "total_tokens",
+            } and isinstance(value, int) and not isinstance(value, bool) and value >= 0} if isinstance(usage, dict) else {}
+            trace.record_event("llm_response", execution_result="success", duration_ms=(time.perf_counter() - started) * 1000,
+                               metadata={"phase": phase, "provider_usage": safe_usage})
+        return response
 
     async def _verify(
         self,
@@ -1045,7 +1061,7 @@ class ReActAgent:
     def _build_memory_context(self, task: str) -> str:
         """Build memory context block for system prompt injection."""
         try:
-            mgr = get_memory_manager()
+            mgr = self._memory_manager if self._memory_manager is not None else get_memory_manager()
             ws_id = self._workspace_root or ""
             ctx = mgr.build_memory_context(task, workspace_id=ws_id)
             if ctx:
@@ -1065,7 +1081,7 @@ class ReActAgent:
     ) -> None:
         """Write task result to memory after completion."""
         try:
-            mgr = get_memory_manager()
+            mgr = self._memory_manager if self._memory_manager is not None else get_memory_manager()
             tool_trace = [s.tool_name for s in steps if s.tool_name]
             success = result.tool_calls_count > 0 and not result.security_warnings
             mgr.add_task_memory(
@@ -1097,7 +1113,7 @@ class ReActAgent:
     def _write_repo_memory(self, analysis, task: str) -> None:
         """Write repo analysis result to memory."""
         try:
-            mgr = get_memory_manager()
+            mgr = self._memory_manager if self._memory_manager is not None else get_memory_manager()
             module_map = {
                 m.get("name", ""): m.get("role", "")
                 for m in analysis.core_modules
