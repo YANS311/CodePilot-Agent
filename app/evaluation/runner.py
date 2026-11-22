@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.agent.trace import TraceEvent
 from app.evaluation.analyzer import analyze_error
+from app.evaluation.error_taxonomy import ErrorType
 from app.evaluation.schema import (
     BaselineMode,
     EvalLayer,
@@ -27,6 +28,7 @@ from app.evaluation.schema import (
     EvalTask,
     ToolCallRecord,
 )
+from app.execution.base import ExecutionResult
 from app.execution.local_runner import LocalExecutionRunner
 from app.memory.memory_manager import get_memory_manager
 
@@ -157,6 +159,24 @@ class EvaluationRunner:
                 changed.add(relative_path.as_posix())
         return sorted(changed)
 
+    def _test_file_unchanged(self, workspace: Path, test_target: str) -> bool:
+        """Check an explicitly named pytest file against the trusted seed."""
+        relative_path = Path(test_target.split("::", 1)[0])
+        if not test_target or relative_path.suffix != ".py":
+            return True
+
+        seed = self._seed.resolve()
+        original = (seed / relative_path).resolve()
+        root = workspace.resolve()
+        target = (root / relative_path).resolve()
+        return (
+            original.is_relative_to(seed)
+            and target.is_relative_to(root)
+            and original.is_file()
+            and target.is_file()
+            and original.read_bytes() == target.read_bytes()
+        )
+
     @staticmethod
     def _record_from_event(event: TraceEvent) -> ToolCallRecord:
         output = event.tool_output
@@ -202,10 +222,13 @@ class EvaluationRunner:
                 )
             duration = int((time.monotonic() - t0) * 1000)
 
-            # 用 Runner 验证：只运行任务相关的测试
-            test_result = await self._runner.run_pytest(
-                str(task_ws), target=task.test_target or None
-            )
+            test_file_unchanged = self._test_file_unchanged(task_ws, task.test_target)
+            if test_file_unchanged:
+                test_result = await self._runner.run_pytest(
+                    str(task_ws), target=task.test_target or None
+                )
+            else:
+                test_result = ExecutionResult(error="The declared test file is missing or differs from the seed.")
 
             trace_events = self._trace_events(agent_result, task.id)
             tool_events = [
@@ -244,10 +267,21 @@ class EvaluationRunner:
                 and event.metadata.get("phase") == "verification"
             ]
             modified_files = self._modified_files(task_ws, tool_events)
+            target_changed = not task.file or Path(task.file).as_posix() in modified_files
+            error_type = ""
+            error_reason = ""
+            if not test_file_unchanged:
+                error_type = ErrorType.TEST_ORACLE_CHANGED.value
+                error_reason = test_result.error
+            elif test_result.success and not target_changed:
+                error_type = ErrorType.NO_CODE_CHANGE.value
+                error_reason = f"Declared target has no trace-confirmed change: {task.file}"
 
             eval_result = EvalResult(
                 task_id=task.id,
-                success=tool_calls_count > 0 and test_result.success,
+                success=tool_calls_count > 0 and test_result.success and target_changed,
+                error_type=error_type,
+                error_reason=error_reason,
                 final_answer=agent_result.answer,
                 tool_calls_count=tool_calls_count,
                 duration_ms=duration,
@@ -287,7 +321,7 @@ class EvaluationRunner:
             except Exception:
                 pass
             # 错误归因
-            if not eval_result.success:
+            if not eval_result.success and not eval_result.error_type:
                 analyze_error(eval_result)
             return eval_result
 

@@ -85,10 +85,15 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Configure provider settings using the existing `.env.example`. Keep credentials
-and logs private: current startup logging includes an API-key prefix and requires
-hardening before public deployment. CI mode uses deterministic mocks, not a real
-model benchmark. Docker and community MCP checks have optional external dependencies.
+Configure provider settings using the existing `.env.example`. Startup logs report
+whether the API key is configured. CI mode uses deterministic model mocks. Docker
+and community MCP checks have optional external dependencies.
+
+Both chat routes use one process-local lock per workspace. Requests rejected at
+admission return HTTP 409 and can be retried by the caller. If a conflict occurs
+after SSE headers have been sent, the stream emits an `error` event. The task ID
+correlates lock status, Agent trace and the chat response. The tool discovery
+endpoints list MCP tools with `enabled: false` for the default HTTP Agent.
 
 ## Reproducible Evaluation
 
@@ -117,7 +122,9 @@ permissions, budgets and final test criteria:
 | D: Full Harness | On | Existing ContextManager | On |
 
 Each trial has a fresh temporary workspace, model conversation, Memory and trace
-sink. Seeded Memory contains a documented general debugging procedure, not test
+sink. For tasks naming a source file, success requires a trace-confirmed net
+change to that file. A named pytest file must match the seed before the
+independent test runner executes it. Seeded Memory contains a documented general debugging procedure, not test
 solutions; cold-start is separately configurable. Normal ablations do not enable
 checkpoints. Recorded provenance includes source SHA, model category, configuration,
 tool-schema hash, seeds, repetitions and estimated-token semantics.

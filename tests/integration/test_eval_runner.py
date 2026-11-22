@@ -824,3 +824,64 @@ class TestReportV21:
         assert r.verification_retries == 1
         assert r.code_edit_used is True
         assert r.write_file_used is False
+
+
+@pytest.mark.parametrize(
+    ("change", "success", "test_success", "error_type"),
+    [
+        ("none", False, True, "no_code_change"),
+        ("unrelated", False, True, "no_code_change"),
+        ("target", True, True, ""),
+        ("test_fixture", False, False, "test_oracle_changed"),
+    ],
+)
+def test_repair_scoring_requires_target_change_and_trusted_test_file(
+    tmp_path, change, success, test_success, error_type
+):
+    from app.agent.react_agent import AgentRunResult
+    from app.agent.trace import ExecutionTrace
+
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    (seed / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (seed / "test_oracle.py").write_text(
+        "from source import VALUE\n\ndef test_value():\n    assert VALUE > 0\n",
+        encoding="utf-8",
+    )
+    runner = EvaluationRunner(workspace_seed=seed, workspace_eval=tmp_path / "eval")
+    task = EvalTask(
+        id="repair",
+        name="Repair",
+        task="Update source.py",
+        difficulty="easy",
+        category="bug-fix",
+        file="source.py",
+        test_target="test_oracle.py::test_value",
+    )
+
+    def factory(workspace, *_):
+        class StubAgent:
+            async def run(self, prompt, *, task_id):
+                trace = ExecutionTrace(task=prompt, task_id=task_id)
+                if change == "none":
+                    trace.add_step(
+                        step=1, tool_name="read_file", arguments={"path": "source.py"},
+                        status="success", latency_ms=0.0, output="VALUE = 1",
+                    )
+                else:
+                    path, content = {
+                        "unrelated": ("notes.txt", "Notes\n"),
+                        "target": ("source.py", "VALUE = 2\n"),
+                        "test_fixture": ("test_oracle.py", "def test_value():\n    pass\n"),
+                    }[change]
+                    (Path(workspace) / path).write_text(content, encoding="utf-8")
+                    trace.add_step(
+                        step=1, tool_name="write_file", arguments={"path": path},
+                        status="success", latency_ms=0.0, output="Written",
+                    )
+                return AgentRunResult(answer="Done.", trace=trace)
+
+        return StubAgent()
+
+    result = asyncio.run(runner.run_task(task, factory))
+    assert (result.success, result.test_success, result.error_type) == (success, test_success, error_type)

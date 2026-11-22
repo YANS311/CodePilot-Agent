@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.agent.react_agent import ReActAgent
+from app.agent.react_agent import AgentRunResult, ReActAgent
 from app.core.config import settings
 from app.api.upload import _resolve_workspace_id
 from app.core.llm_client import LLMClient
@@ -26,6 +27,8 @@ from app.demo.scenarios import get_demo, list_demos
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
+_WORKSPACE_BUSY = "该工作区已有任务正在运行，请稍后重试。"
+_CHAT_FAILED = "任务执行失败。"
 
 
 # ── 请求/响应模型 ──────────────────────────────────────
@@ -54,6 +57,7 @@ class AgentStepItem(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    task_id: str
     answer: str
     tool_calls_count: int
     tool_results: list[ToolResultItem]
@@ -72,7 +76,7 @@ class ChatResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    error: str
+    detail: str
 
 
 class DemoRequest(BaseModel):
@@ -186,62 +190,39 @@ async def run_demo(req: DemoRequest):
     )
 
 
-@router.post("/chat", response_model=ChatResponse, responses={500: {"model": ErrorResponse}})
+def _check_workspace_available(ws: str) -> None:
+    if get_lock_manager().is_locked(ws):
+        raise HTTPException(status_code=409, detail=_WORKSPACE_BUSY)
+
+
+async def _run_workspace_task(ws: str, task: str, task_id: str) -> AgentRunResult:
+    lock_mgr = get_lock_manager()
+    # Both HTTP entry points use this admission check and take the same lock.
+    _check_workspace_available(ws)
+    await lock_mgr.acquire(ws, task_id, task_prompt=task)
+    try:
+        agent = _build_agent(workspace_root=ws)
+        return await agent.run(task, task_id=task_id)
+    finally:
+        lock_mgr.release(ws, task_id)
+
+
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    responses={409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
 async def chat(req: ChatRequest) -> ChatResponse:
     """执行编码任务，返回完整结果。"""
-    import uuid as _uuid
-
     ws = str(_resolve_workspace_id(req.workspace_id))
-    lock_mgr = get_lock_manager()
-    task_id = _uuid.uuid4().hex[:8]
-
-    # Check lock status
-    status = lock_mgr.get_status(ws)
-    if status["status"] == "locked":
-        # Already running — queue this request
-        import asyncio as _asyncio
-        loop = _asyncio.get_event_loop()
-
-        async def _queued_task():
-            entry = await lock_mgr.wait_in_queue(
-                ws, task_id, user_id="default", task_prompt=req.task,
-            )
-            try:
-                agent = _build_agent(workspace_root=ws)
-                result = await agent.run(req.task)
-                return result
-            finally:
-                lock_mgr.release(ws, task_id)
-
-        # For now, return queued status (non-blocking)
-        # In production, this would be a WebSocket or SSE subscription
-        return ChatResponse(
-            answer="",
-            tool_calls_count=0,
-            tool_results=[],
-            messages=[],
-            thoughts=[],
-            steps=[],
-            security_warnings=[],
-            evidence=[],
-            confidence=0.0,
-            mode="queued",
-            metrics={"status": "queued", "queue_position": status["queue_length"] + 1},
-            execution_trace=[],
-            tools_used=[],
-        )
-
-    # Acquire lock and execute
+    task_id = uuid4().hex
     try:
-        await lock_mgr.acquire(ws, task_id, user_id="default", task_prompt=req.task)
-
-        agent = _build_agent(workspace_root=ws)
-        result = await agent.run(req.task)
+        result = await _run_workspace_task(ws, req.task, task_id)
 
         # D23: format through unified output layer
-        from app.router.intent_router import get_intent_router, INTENT_REPO
+        from app.router.intent_router import get_intent_router
         intent = get_intent_router().route(req.task)
-        mode = intent.intent if intent.intent != "security" else "security"
+        mode = intent.intent
         if result.security_warnings:
             mode = "security"
 
@@ -257,6 +238,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         )
 
         return ChatResponse(
+            task_id=task_id,
             answer=result.answer,
             tool_calls_count=result.tool_calls_count,
             tool_results=[
@@ -291,26 +273,28 @@ async def chat(req: ChatRequest) -> ChatResponse:
             execution_trace=[s.to_dict() for s in unified.execution_trace],
             tools_used=unified.tools_used,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.exception("Chat request failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        lock_mgr.release(ws, task_id)
+        logger.exception("Chat request %s failed", task_id)
+        raise HTTPException(status_code=500, detail=_CHAT_FAILED) from exc
 
 
-@router.post("/chat/stream")
+@router.post("/chat/stream", responses={409: {"model": ErrorResponse}})
 async def chat_stream(req: ChatRequest):
-    """SSE 流式接口 — 当前为模拟流式，预留真实流式扩展点。"""
+    """用 SSE 返回任务完成后的工具结果。"""
     from starlette.responses import StreamingResponse
 
+    ws = str(_resolve_workspace_id(req.workspace_id))
+    _check_workspace_available(ws)
+    task_id = uuid4().hex
+
     async def event_generator():
-        # event: start
-        yield _sse_event("start", {"task": req.task})
+        yield _sse_event("start", {"task": req.task, "task_id": task_id})
 
         try:
-            ws = str(_resolve_workspace_id(req.workspace_id))
-            agent = _build_agent(workspace_root=ws)
-            result = await agent.run(req.task)
+            # Admission is checked again once the stream starts consuming its body.
+            result = await _run_workspace_task(ws, req.task, task_id)
 
             # 逐个发送 tool_results
             for tr in result.tool_results:
@@ -322,13 +306,16 @@ async def chat_stream(req: ChatRequest):
 
             # event: final
             yield _sse_event("final", {
+                "task_id": task_id,
                 "answer": result.answer,
                 "tool_calls_count": result.tool_calls_count,
             })
 
-        except Exception as exc:
-            logger.exception("Stream chat failed")
-            yield _sse_event("error", {"error": str(exc)})
+        except HTTPException as exc:
+            yield _sse_event("error", {"task_id": task_id, "error": exc.detail})
+        except Exception:
+            logger.exception("Stream chat request %s failed", task_id)
+            yield _sse_event("error", {"task_id": task_id, "error": _CHAT_FAILED})
 
     return StreamingResponse(
         event_generator(),
