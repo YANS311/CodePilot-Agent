@@ -303,6 +303,32 @@
         .tool-tag { background: #1c2128; border: 1px solid #30363d; border-radius: 4px; padding: 3px 10px; font-size: 12px; color: #79c0ff; font-family: monospace; }
         .mode-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-left: 8px; }
         .mode-react { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #0b1018; padding: 32px; }
+        .header-bar, .subtitle, .layout { max-width: 1440px; margin-left: auto; margin-right: auto; }
+        .header-bar { padding-bottom: 12px; border-bottom: 1px solid #283343; }
+        h1 { color: #edf4ff; letter-spacing: -.03em; font-size: 1.65rem; }
+        .subtitle { padding-top: 12px; margin-bottom: 28px; color: #a2b0c2; }
+        .layout { gap: 28px; align-items: flex-start; }
+        .side-col { width: 410px; }
+        .skills-bar-container { padding: 20px; border: 1px solid #263447; border-radius: 12px; background: #111b29; }
+        .bar-label { font-size: 12px; margin-bottom: 12px; color: #aebed1; }
+        .skill-pill { padding: 9px 13px; border-radius: 8px; background: #162334; border-color: #304258; }
+        .input-area { padding: 16px; border: 1px solid #263447; border-radius: 12px; background: #111b29; align-items: stretch; }
+        #task-input { min-height: 112px; border-radius: 8px; background: #0c1521; }
+        #submit-btn { background: #3979ec; border-radius: 8px; }
+        #submit-btn:hover { background: #558df4; }
+        .hub-panel { border-radius: 12px; border-color: #29384a; background: #111b29; }
+        .hub-tabs { background: #0d1723; padding: 8px 6px 0; }
+        .hub-tab { padding: 11px 9px; }
+        .tab-content { padding: 20px; }
+        .mcp-card, .skill-card, .sec-card { background: #0c1521; border-color: #29384a; border-radius: 9px; padding: 14px; }
+        .modal-box { border-radius: 12px; border-color: #34475e; }
+        .modal-body label { display: block; font-size: 12px; color: #b3c3d5; margin-bottom: 5px; }
+        .modal-body input, .modal-body select { font-family: inherit; }
+        .mcp-feedback { margin-top: 12px; padding: 10px 12px; border-radius: 7px; background: #101d2b; color: #b8cbe2; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #79b4ff; outline-offset: 2px; }
+        @media (max-width: 900px) { body { padding: 20px; } .layout { flex-direction: column; } .main-col, .side-col { width: 100%; } .hub-panel { position: static; max-height: none; } }
+        @media (max-width: 520px) { body { padding: 14px; } .header-bar { align-items: flex-start; gap: 10px; } h1 { font-size: 1.25rem; flex-wrap: wrap; } .input-area { flex-direction: column; } #submit-btn { min-height: 46px; } .modal-footer { gap: 8px; flex-wrap: wrap; } }
     </style>
 </head>
 <body>
@@ -312,10 +338,10 @@
             <span class="version-tag">v2.0 ReAct Harness</span>
         </h1>
         <div style="font-size:12px;color:#8b949e;">
-            LLM: <span id="header-llm" style="color:#58a6ff;font-weight:600;">deepseek-v4-flash</span>
+            本地工作区
         </div>
     </div>
-    <p class="subtitle">Google Antigravity-Inspired Coding Agent &mdash; 统一工具运行时、MCP 协议集成与渐进式 Agent 技能系统</p>
+    <p class="subtitle">在工作区中运行任务，查看执行过程与工具结果。</p>
 
     <div class="layout">
         <!-- ════════ 左侧：任务交互与执行轨迹 ════════ -->
@@ -467,6 +493,7 @@
 
                 <!-- ── TAB 3: MCP 协议插件中心 ── -->
                 <div class="tab-content" id="tab-mcp">
+                    <p style="font-size:12px;color:#a2b0c2;line-height:1.6;margin-bottom:14px;">检查服务连接并浏览工具。发现的 MCP 工具当前不会自动加入聊天。</p>
                     <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:12px;color:#8b949e;text-transform:uppercase;font-weight:600;">已挂载 MCP 服务</span>
                         <button class="btn-skill-sop" style="flex:none;" onclick="openAddMcpModal()">+ 添加 Server</button>
@@ -550,20 +577,23 @@
                     <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">传输协议 (Transport)</label>
                     <select id="mcp-input-transport" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
                         <option value="stdio">stdio (本地子进程 JSON-RPC)</option>
-                        <option value="sse">sse (远程 HTTP/SSE 协议)</option>
+                        <option value="sse">HTTP JSON-RPC POST（现有传输）</option>
                     </select>
                 </div>
                 <div style="margin-bottom:12px;">
                     <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">命令 / URL</label>
-                    <input id="mcp-input-cmd" placeholder="stdio 命令 (如 npx) 或 SSE URL (如 http://...)" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                    <input id="mcp-input-cmd" placeholder="stdio 命令或 HTTP JSON-RPC 地址" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
                 </div>
                 <div style="margin-bottom:12px;">
-                    <label style="display:block;font-size:12px;color:#8b949e;margin-bottom:4px;">参数 (Args，空格分隔)</label>
-                    <input id="mcp-input-args" placeholder="-y @modelcontextprotocol/server-memory" style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
+                    <label for="mcp-input-args">参数（JSON 字符串数组）</label>
+                    <input id="mcp-input-args" placeholder='例如 ["-y", "@playwright/mcp@0.0.86"]' style="width:100%;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;">
                 </div>
+                <p style="font-size:12px;color:#a2b0c2;">本地服务会启动填写的命令。HTTP 类型目前仅支持 JSON-RPC POST。</p>
+                <div id="mcp-feedback" class="mcp-feedback" role="status" aria-live="polite" hidden></div>
             </div>
             <div class="modal-footer">
-                <button class="btn-skill-use" onclick="submitAddMcpServer()">立即连接并挂载</button>
+                <button class="btn-skill-sop" onclick="checkMcpServer()">检查连通性</button>
+                <button class="btn-skill-use" onclick="submitAddMcpServer()">连接服务</button>
                 <button class="btn-skill-sop" onclick="closeAddMcpModal()">取消</button>
             </div>
         </div>
@@ -795,6 +825,7 @@
     }
 
     function openAddMcpModal() {
+        document.getElementById('mcp-feedback').hidden = true;
         document.getElementById('mcp-add-modal').classList.add('active');
     }
 
@@ -802,24 +833,52 @@
         document.getElementById('mcp-add-modal').classList.remove('active');
     }
 
-    async function submitAddMcpServer() {
+    function mcpPayload() {
         const name = document.getElementById('mcp-input-name').value.trim();
         const transport = document.getElementById('mcp-input-transport').value;
         const cmd = document.getElementById('mcp-input-cmd').value.trim();
         const argsStr = document.getElementById('mcp-input-args').value.trim();
 
-        if (!name) { alert('请输入 Server 名称'); return; }
+        if (!name || !cmd) throw new Error('请输入服务名称和命令或地址。');
+        let args = [];
+        if (transport === 'stdio' && argsStr) {
+            try { args = JSON.parse(argsStr); } catch { throw new Error('参数须为 JSON 字符串数组，例如 ["-y", "package"]。'); }
+            if (!Array.isArray(args) || !args.every(arg => typeof arg === 'string')) throw new Error('参数须为 JSON 字符串数组。');
+        }
 
-        const payload = {
+        return {
             name: name,
             transport: transport,
             command: transport === 'stdio' ? cmd : null,
             url: transport === 'sse' ? cmd : null,
-            args: argsStr ? argsStr.split(/\s+/) : [],
+            args: args,
             timeout: 30.0
         };
+    }
+
+    function mcpFeedback(message) {
+        const feedback = document.getElementById('mcp-feedback');
+        feedback.textContent = message;
+        feedback.hidden = false;
+    }
+
+    async function checkMcpServer() {
+        try {
+            const payload = mcpPayload();
+            mcpFeedback('正在检查连接和工具列表…');
+            const resp = await fetch('/api/mcp/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error('请求无效，请检查配置。');
+            if (data.status !== 'connected') throw new Error(data.hint || '连接失败');
+            mcpFeedback(`连接成功 · 发现 ${data.tools_count} 个工具\n${data.tools.join('、') || '服务未提供工具'}\n这些工具尚未启用到默认聊天。`);
+        } catch (e) { mcpFeedback('检查失败：' + e.message); }
+    }
+
+    async function submitAddMcpServer() {
 
         try {
+            const payload = mcpPayload();
+            mcpFeedback('正在连接…');
             const resp = await fetch('/api/mcp/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -829,11 +888,10 @@
                 const err = await resp.json();
                 throw new Error(err.detail || '连接失败');
             }
-            alert(`MCP Server '${name}' 连接成功！`);
-            closeAddMcpModal();
+            mcpFeedback(`服务 ${payload.name} 已连接，发现 ${((await resp.json()).tools_loaded || []).length} 个工具。默认聊天尚未启用这些工具。`);
             loadMcpServers();
         } catch (e) {
-            alert('连接失败: ' + e.message);
+            mcpFeedback('连接失败：' + e.message);
         }
     }
 

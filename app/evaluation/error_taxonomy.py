@@ -20,6 +20,8 @@ class ErrorType(str, Enum):
     # 执行了测试但测试失败
     TEST_FAILED = "test_failed"
 
+    TEST_ORACLE_CHANGED = "test_oracle_changed"
+
     # 达到最大工具调用次数
     MAX_TOOL_CALLS_EXCEEDED = "max_tool_calls_exceeded"
 
@@ -39,6 +41,7 @@ ERROR_DESCRIPTIONS: dict[ErrorType, str] = {
     ErrorType.PATH_RESOLUTION_ERROR: "文件路径解析错误",
     ErrorType.TEST_NOT_EXECUTED: "修改后未执行测试验证",
     ErrorType.TEST_FAILED: "执行了测试但测试失败",
+    ErrorType.TEST_ORACLE_CHANGED: "指定测试文件缺失或与初始夹具不同",
     ErrorType.MAX_TOOL_CALLS_EXCEEDED: "达到最大工具调用次数上限",
     ErrorType.NO_CODE_CHANGE: "未实际修改任何文件",
     ErrorType.DIFF_UNAVAILABLE: "git diff 不可用",

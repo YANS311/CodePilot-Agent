@@ -13,6 +13,7 @@ from app.api.memory import router as memory_router
 from app.api.tools import router as tools_router
 from app.api.upload import router as upload_router
 from app.core.config import settings
+from app.mcp.registry import mcp_registry
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +22,19 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("LLM base_url: %s", settings.llm_base_url)
     logger.info("LLM model:    %s", settings.llm_model)
-    logger.info("LLM api_key:  %s...", settings.llm_api_key[:8] if settings.llm_api_key else "(empty)")
-    
-    # 启动时自动发现并加载根目录 mcp.json
+    logger.info("LLM api_key:  %s", "configured" if settings.llm_api_key else "(empty)")
+
     mcp_file = Path("mcp.json")
-    if mcp_file.exists():
+    if mcp_file.exists() and not mcp_registry.list_servers():
         try:
-            from app.mcp.registry import mcp_registry
-            mcp_registry.load_from_json(mcp_file)
-            logger.info("Auto-indexed %d MCP server(s) from %s", len(mcp_registry._configs), mcp_file)
+            registered = mcp_registry.load_from_json(mcp_file)
+            logger.info("Auto-indexed %d MCP server(s) from %s", len(registered), mcp_file)
         except Exception as exc:
             logger.warning("Failed to load mcp.json: %s", exc)
-    yield
+    try:
+        yield
+    finally:
+        await mcp_registry.disconnect_all()
 
 
 
