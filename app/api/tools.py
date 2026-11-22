@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.chat import _build_registry
-from app.mcp.registry import MCPServerConfig, mcp_registry
+from app.mcp.registry import MCPRegistry, MCPServerConfig, mcp_registry
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,31 @@ async def list_mcp_servers() -> Dict[str, Any]:
 async def _remove_mcp_server(name: str) -> None:
     await mcp_registry.disconnect_server(name)
     mcp_registry.unregister_server(name)
+
+
+@router.post("/api/mcp/probe")
+async def probe_mcp_server(config: MCPServerConfig) -> Dict[str, Any]:
+    """临时连接 MCP Server，检查握手和工具发现，然后关闭连接。"""
+    registry = MCPRegistry()
+    try:
+        registry.register_server(config)
+        tools = await asyncio.wait_for(registry.connect_server(config.name), timeout=config.timeout)
+        client = registry.get_client(config.name)
+        return {
+            "status": "connected", "server": config.name,
+            "server_info": client.server_info if client else {},
+            "tools_count": len(tools), "tools": [tool.original_name for tool in tools],
+            "chat_enabled": False,
+        }
+    except asyncio.TimeoutError:
+        return {"status": "failed", "server": config.name, "reason": "timeout", "hint": "连接或工具发现超时，请检查服务与超时设置。"}
+    except ValueError:
+        return {"status": "failed", "server": config.name, "reason": "invalid_config", "hint": "请检查传输类型所需的 command 或 url。"}
+    except Exception:
+        logger.exception("MCP probe failed for '%s'", config.name)
+        return {"status": "failed", "server": config.name, "reason": "connection_failed", "hint": "请检查命令、地址、传输协议及服务日志。"}
+    finally:
+        await registry.disconnect_all()
 
 
 @router.post("/api/mcp/connect")

@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.mcp.client import MCPToolDefinition
-from app.mcp.registry import MCPRegistry
+from app.mcp.registry import MCPRegistry, MCPServerConfig
+import pytest
 
 
 def test_mcp_reconnect_and_delete_close_owned_clients(monkeypatch):
@@ -82,3 +83,28 @@ def test_lifespan_closes_registered_mcp_client(monkeypatch):
         client.close.assert_not_awaited()
 
     client.close.assert_awaited_once()
+
+
+def test_probe_is_temporary_and_closes_connection(monkeypatch):
+    registry = MCPRegistry()
+    client = AsyncMock()
+    client.server_info = {"name": "example"}
+    client.list_tools.return_value = [MCPToolDefinition(name="hello")]
+    monkeypatch.setattr("app.api.tools.MCPRegistry", lambda: registry)
+    monkeypatch.setattr(registry, "register_server", lambda config: registry.register_client(config.name, client, config))
+    with TestClient(app) as api:
+        result = api.post("/api/mcp/probe", json={"name": "demo", "command": "python"})
+        assert result.status_code == 200
+        assert result.json()["tools"] == ["hello"]
+        assert result.json()["chat_enabled"] is False
+    client.close.assert_awaited_once()
+
+
+def test_probe_invalid_configuration_and_registry_remains_clean():
+    registry = MCPRegistry()
+    with TestClient(app) as api:
+        result = api.post("/api/mcp/probe", json={"name": "demo", "transport": "stdio"})
+        assert result.json()["reason"] == "invalid_config"
+    with pytest.raises(ValueError):
+        registry.register_server(MCPServerConfig(name="demo"))
+    assert registry._configs == {}

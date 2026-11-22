@@ -44,7 +44,7 @@ class MCPServerConfig(BaseModel):
     url: Optional[str] = Field(None, description="SSE / HTTP 服务端点 URL")
     headers: Dict[str, str] = Field(default_factory=dict, description="HTTP 请求头")
     # 通用配置
-    timeout: float = Field(30.0, description="默认调用超时时间 (秒)")
+    timeout: float = Field(30.0, gt=0, le=120, description="默认调用超时时间 (秒)")
     auto_register: bool = Field(True, description="是否自动挂载到 ToolRegistry")
     namespace_tools: bool = Field(False, description="是否为工具名称添加 Server 前缀")
 
@@ -195,8 +195,6 @@ class MCPRegistry:
         if config.name in self._configs:
             raise ValueError(f"MCP Server '{config.name}' 已存在")
 
-        self._configs[config.name] = config
-
         if config.transport == "stdio":
             if not config.command:
                 raise ValueError(f"Stdio MCP Server '{config.name}' 必须指定 command")
@@ -218,6 +216,7 @@ class MCPRegistry:
             raise ValueError(f"不支持的传输协议: {config.transport}")
 
         client = MCPClient(transport=transport, client_name="CodePilot-Agent")
+        self._configs[config.name] = config
         self._clients[config.name] = client
         return client
 

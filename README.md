@@ -95,6 +95,17 @@ after SSE headers have been sent, the stream emits an `error` event. The task ID
 correlates lock status, Agent trace and the chat response. The tool discovery
 endpoints list MCP tools with `enabled: false` for the default HTTP Agent.
 
+To inspect a custom MCP server, open `/docs` and call `POST /api/mcp/probe`
+with a server name, transport, and either `command`/`args` for stdio or `url`
+for the existing HTTP JSON-RPC transport. The probe starts a temporary connection,
+performs the MCP handshake and lists tool names, then closes it. A connected
+result reports `chat_enabled: false`: discovery does not enable those tools in
+the default chat. Use `POST /api/mcp/connect` to register a server for the
+current process; registration is not persisted. Only connect trusted servers:
+stdio starts the supplied local command. The current `sse` transport sends HTTP
+JSON-RPC POST requests and does not implement the SSE or Streamable HTTP session
+protocols. A successful probe does not verify every tool's behavior.
+
 ## Reproducible Evaluation
 
 Use the repository's configured conda environment on this workstation:
